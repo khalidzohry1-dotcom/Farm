@@ -447,13 +447,14 @@
       plus: '<path d="M12 5v14M5 12h14"/>',
       list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
       gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>',
+      sliders: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
       x: '<path d="M6 6l12 12M18 6 6 18"/>',
       inbox: '<path d="M4 13l2.5-7h11L20 13M4 13v6h16v-6M4 13h5l1 2h4l1-2h5"/>'
     }[name];
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>';
   }
   function renderNav() {
-    var items = [['home', 'الرئيسية', 'home'], ['settle', 'التسوية', 'scale'], ['add', 'إضافة', 'plus'], ['records', 'السجلات', 'list'], ['requests', 'الطلبات', 'inbox']].filter(function (it) {
+    var items = [['home', 'الرئيسية', 'home'], ['settle', 'التسوية', 'scale'], ['add', 'إضافة', 'plus'], ['records', 'السجلات', 'list'], ['settings', 'الإعدادات', 'sliders'], ['requests', 'الطلبات', 'inbox']].filter(function (it) {
       if (viewer()) return it[0] === 'home' || it[0] === 'settle' || it[0] === 'records';
       if (it[0] === 'requests') return state.pending.length > 0 || state.tab === 'requests';
       return true;
@@ -691,7 +692,7 @@
   function render() {
     var c = compute(); cache = c;
     var ro = $('ro'); ro.hidden = !viewer(); ro.textContent = 'عرض فقط';
-    $('gear').hidden = viewer();
+    $('gear').hidden = true;
     $('gear').innerHTML = icon('gear');
     renderNav();
     var v = $('view');
