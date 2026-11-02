@@ -567,8 +567,12 @@
         '<div class="t"><span>الفرق</span><span class="' + (p.diff > 0.005 ? 'good' : p.diff < -0.005 ? 'bad' : '') + '">' + N(p.diff) + '</span></div></div>' + editBtn(p.name) + '</div>';
     }).join('') + '</div>';
     h += '<h2>التحويلات المقترحة</h2>';
-    if (!c.transfers.length) h += '<div class="card empty"><b>لا توجد تحويلات مطلوبة</b>الحسابات متساوية بين الشركاء حاليًا.</div>';
-    else h += '<div class="stack">' + c.transfers.map(function (t) { return '<div class="card prow"><span><b>' + esc(t.from) + '</b> يحوّل إلى <b>' + esc(t.to) + '</b></span><b>' + N(t.a) + ' <span class="small muted">' + esc(cur()) + '</span></b></div>'; }).join('') + '</div>';
+    var tr = num(state.settings.todayRate);
+    h += '<div class="card"><form id="rateform" novalidate><div class="field" style="margin-bottom:8px"><label for="trate">سعر صرف اليوم (جنيه مقابل 1 دينار كويتي)</label><input id="trate" type="text" inputmode="decimal" autocomplete="off" value="' + (tr > 0 ? esc(tr) : '') + '"></div>' +
+      '<p class="small muted" style="margin:0 0 8px">' + (tr > 0 ? 'آخر تحديث للسعر: ' + esc(state.settings.rateDate || '') : 'اكتب سعر اليوم ليظهر ما يقابل كل تحويل بالدينار الكويتي.') + '</p>' +
+      '<div class="err" id="rateerr" role="alert"></div><button type="submit" class="btn ghost" style="margin-top:0">حفظ سعر اليوم</button></form></div>';
+    if (!c.transfers.length) h += '<div class="card empty" style="margin-top:12px"><b>لا توجد تحويلات مطلوبة</b>الحسابات متساوية بين الشركاء حاليًا.</div>';
+    else h += '<div class="stack" style="margin-top:12px">' + c.transfers.map(function (t) { return '<div class="card prow"><span><b>' + esc(t.from) + '</b> يحوّل إلى <b>' + esc(t.to) + '</b></span><b>' + N(t.a) + ' <span class="small muted">' + esc(cur()) + '</span>' + (tr > 0 ? '<div class="small muted" style="font-weight:400">≈ ' + fmtN(t.a / tr, 3) + ' د.ك</div>' : '') + '</b></div>'; }).join('') + '</div>';
     h += salShares(c);
     h += '<h2>حركة الصندوق</h2><div class="card"><div class="lines" style="margin-top:0">' +
       '<div><span class="muted">إجمالي التكاليف المدفوعة</span><span>' + N(c.paidCosts) + '</span></div>' +
@@ -722,6 +726,7 @@
     if (!state.dbOk) { v.innerHTML = '<div class="empty"><b>التخزين المشترك غير متاح</b>افتح الصفحة من حسابك على claude.ai لتسجيل البيانات.</div>'; return; }
     v.innerHTML = { home: viewHome, settle: viewSettle, records: viewRecords, requests: viewRequests, settings: viewSettings }[state.tab](c);
     var sf = $('setform'); if (sf) sf.onsubmit = saveSettings;
+    var rf = $('rateform'); if (rf) rf.onsubmit = saveRate;
   }
   var raf = 0;
   function schedule() { if (raf) return; raf = requestAnimationFrame(function () { raf = 0; render(); }); }
@@ -905,7 +910,8 @@
     });
     if (c.transfers.length) {
       L.push(''); L.push('التحويلات المقترحة:');
-      c.transfers.forEach(function (t) { L.push('- ' + t.from + ' يحوّل إلى ' + t.to + ': ' + fmt(t.a)); });
+      var tr0 = num(state.settings && state.settings.todayRate);
+      c.transfers.forEach(function (t) { L.push('- ' + t.from + ' يحوّل إلى ' + t.to + ': ' + fmt(t.a) + (tr0 > 0 ? ' (≈ ' + fmtN(t.a / tr0, 3) + ' د.ك بسعر ' + fmtN(tr0, 3) + ')' : '')); });
     }
     return L.join('\n');
   }
@@ -1017,6 +1023,14 @@
     try { var res = await commit('delete', cur_edit.type, cur_edit.id, null, cur_edit.old, 'delete'); toast(res === 'requested' ? 'تم إرسال طلب الحذف لموافقة صاحب الصفحة' : 'تم الحذف'); closeSheet(); cur_edit = null; }
     catch (e) { b.disabled = false; $('formerr').textContent = 'تعذّر الحذف، حاول مرة أخرى.'; }
   }
+  async function saveRate(e) {
+    e.preventDefault();
+    var r = num($('trate').value), err = $('rateerr');
+    if (!(r > 0) || r > 10000) { err.textContent = 'اكتب سعر صرف صحيحًا أكبر من صفر'; return; }
+    err.textContent = '';
+    try { await dbh.doc('settings/main').set(Object.assign({}, state.settings, { todayRate: r, rateDate: today() })); toast('تم حفظ سعر اليوم'); }
+    catch (x) { err.textContent = 'تعذّر الحفظ'; }
+  }
   async function saveSettings(e) {
     e.preventDefault();
     var err = $('seterr'), ps = [], names = {};
@@ -1031,7 +1045,7 @@
     var tot = sum(ps, function (p) { return p.ratio; });
     if (Math.abs(tot - 100) > 0.01) { err.textContent = 'مجموع النسب ' + fmt(tot) + '% ويجب أن يساوي 100%'; return; }
     err.textContent = '';
-    try { await dbh.doc('settings/main').set({ partners: ps, currency: $('cur').value.trim() || 'جنيه' }); toast('تم حفظ الإعدادات'); if (state.tab === 'settings') { state.tab = 'home'; render(); } }
+    try { await dbh.doc('settings/main').set({ partners: ps, currency: $('cur').value.trim() || 'جنيه', todayRate: (state.settings && state.settings.todayRate) || 0, rateDate: (state.settings && state.settings.rateDate) || '' }); toast('تم حفظ الإعدادات'); if (state.tab === 'settings') { state.tab = 'home'; render(); } }
     catch (x) { err.textContent = 'تعذّر الحفظ. تحتاج صلاحية «مساهم» على الأقل.'; }
   }
 
