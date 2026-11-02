@@ -257,7 +257,8 @@
 <script>
 (function () {
   'use strict';
-  var FUND = 'صندوق المزرعة';
+  var FUND = 'صندوق المزرعة'; // قديم: يُعامل كتمويل
+  var FUND_F = 'التمويل', FUND_P = 'الناتج';
   var CATS = ['مياه وري', 'كهرباء ووقود', 'نقل وشحن', 'إيجار', 'تأسيس وإنشاءات', 'رسوم وتراخيص', 'عمالة يومية', 'معدات وتصليح', 'بذور وشتلات', 'أسمدة ومواد', 'أخرى'];
   var INCATS = ['مبيدات', 'أعلاف', 'عبوات وتغليف', 'أخرى'];
   var UNITS = ['كجم', 'طن', 'صندوق', 'شكارة', 'عدد', 'لتر'];
@@ -289,7 +290,7 @@
   function netOf(x) { return num(x.base) + num(x.allow) - num(x.ded); }
 
   // ---------- data types ----------
-  function payerOpts() { return partnerNames().concat([FUND]); }
+  function payerOpts() { return [FUND_F + '|من التمويل', FUND_P + '|من الناتج (المبيعات)'].concat(partnerNames().map(function (n) { return n + '|من جيب ' + n; })); }
   var TYPES = {
     funding: { label: 'تمويل', hint: 'مبلغ مستلم من شريك (دينار أو جنيه)', fields: [
       { k: 'date', t: 'date', l: 'تاريخ الاستلام', req: 1 },
@@ -306,7 +307,7 @@
       { k: 'category', t: 'select', l: 'الفئة', opts: function () { return CATS; }, req: 1 },
       { k: 'desc', t: 'text', l: 'البيان' },
       { k: 'amount', t: 'money', l: 'المبلغ', req: 1 },
-      { k: 'paidBy', t: 'select', l: 'دُفع بواسطة', opts: payerOpts, req: 1 },
+      { k: 'paidBy', t: 'select', l: 'مصدر الدفع', opts: payerOpts, req: 1 },
       { k: 'note', t: 'text', l: 'ملاحظات' }],
       title: function (d) { return d.desc || d.category; }, meta: function (d) { return [d.category, 'دفع: ' + (d.paidBy || FUND)]; },
       val: function (d) { return { v: num(d.amount), cur: 1 }; } },
@@ -319,7 +320,7 @@
       { k: 'unit', t: 'select', l: 'الوحدة', opts: function () { return UNITS; }, half: 1 },
       { k: 'price', t: 'money', l: 'سعر الوحدة', req: 1 },
       { k: 'paid', t: 'money', l: 'المدفوع للمورد' },
-      { k: 'paidBy', t: 'select', l: 'دُفع بواسطة', opts: payerOpts },
+      { k: 'paidBy', t: 'select', l: 'مصدر الدفع', opts: payerOpts },
       { k: 'note', t: 'text', l: 'ملاحظات' }],
       calc: function (d) { var t = num(d.qty) * num(d.price); return [['الإجمالي', t], ['المتبقي للمورد', t - num(d.paid)]]; },
       title: function (d) { return d.item; }, meta: function (d) { return [d.category, d.supplier, d.qty ? fmt(num(d.qty)) + ' ' + (d.unit || '') : '']; },
@@ -364,7 +365,7 @@
       { k: 'allow', t: 'money', l: 'بدلات / مكافآت', half: 1 },
       { k: 'ded', t: 'money', l: 'خصومات / سلف', half: 1 },
       { k: 'paid', t: 'select', l: 'تم الصرف؟', opts: function () { return ['yes|نعم', 'no|لا']; }, req: 1 },
-      { k: 'paidBy', t: 'select', l: 'صُرف بواسطة', opts: payerOpts },
+      { k: 'paidBy', t: 'select', l: 'مصدر الصرف', opts: payerOpts },
       { k: 'note', t: 'text', l: 'ملاحظات' }],
       calc: function (d) { return [['الصافي', netOf(d)]]; },
       title: function (d) { return d.worker; }, meta: function (d) { return [d.job, d.paid === 'yes' ? 'مصروف' + (d.paidDate ? ' ' + d.paidDate : '') + (d.paidBy ? ' بواسطة ' + d.paidBy : '') : 'لم يُصرف']; },
@@ -401,12 +402,17 @@
         sum(S.incoming, function (x) { return x.paidBy === p.name ? num(x.paid) : 0; }) +
         sum(S.payroll, function (x) { return x.paid === 'yes' && x.paidBy === p.name ? netOf(x) : 0; });
       tot += funded + direct;
-      return { name: p.name, ratio: num(p.ratio), funded: funded, direct: direct, paid: funded + direct };
+      var fk = sum(S.funding, function (x) { return x.partner === p.name ? num(x.kwd) : 0; });
+      return { name: p.name, ratio: num(p.ratio), funded: funded, fundedKwd: fk, direct: direct, paid: funded + direct };
     });
     c.totalPaid = tot;
     c.p.forEach(function (p) { p.share = tot * p.ratio / 100; p.diff = p.paid - p.share; p.profit = c.net * p.ratio / 100; p.salShare = c.salTotal * p.ratio / 100; p.salDueShare = c.salDue * p.ratio / 100; });
     c.directAll = sum(c.p, function (p) { return p.direct; });
     c.fundCosts = c.paidCosts - c.directAll;
+    c.fromProceeds = sum(S.expenses, function (x) { return x.paidBy === FUND_P ? num(x.amount) : 0; }) + sum(S.incoming, function (x) { return x.paidBy === FUND_P ? num(x.paid) : 0; }) + sum(S.payroll, function (x) { return x.paid === 'yes' && x.paidBy === FUND_P ? netOf(x) : 0; });
+    c.fromFunding = c.fundCosts - c.fromProceeds;
+    c.fundBal = c.funding - c.fromFunding;
+    c.procBal = c.collected - c.fromProceeds;
     c.cash = c.funding + c.collected - c.fundCosts;
     // products
     var names = {};
@@ -474,7 +480,7 @@
   function viewHome(c) {
     if (!state.settings) return state.loaded.settings ? viewSetupNeeded() : '<div class="empty">جارٍ التحميل…</div>';
     var h = reqBanner() + backupReminder() + '<div class="hero"><div class="lbl">رصيد صندوق المزرعة الآن</div><div class="big">' + N(c.cash) + '<small>' + esc(cur()) + '</small></div>' +
-      '<div class="row"><span>التمويل <b>' + N(c.funding) + '</b></span><span>المحصّل من المبيعات <b>' + N(c.collected) + '</b></span></div></div>';
+      '<div class="row"><span>المتبقي من التمويل <b>' + N(c.fundBal) + '</b></span><span>المتبقي من الناتج <b>' + N(c.procBal) + '</b></span></div></div>';
     if (totalRecords() === 0) h += '<div class="note" style="margin-top:12px">لا توجد سجلات بعد. اضغط زر <b>+</b> وابدأ بتسجيل تمويل كل شريك.</div>';
     h += '<div class="grid">' +
       kpi('التكاليف (بدون الرواتب)', N(c.costs)) +
@@ -488,6 +494,7 @@
       return '<div class="card"><div class="prow"><span class="nm">' + esc(p.name) + '</span>' + pill(p.diff) + '</div><div class="lines">' +
         '<div><span class="muted">صرف من جيبه</span><span>' + N(p.direct) + '</span></div>' +
         '<div><span class="muted">موّل للصندوق</span><span>' + N(p.funded) + '</span></div>' +
+        (p.fundedKwd > 0 ? '<div><span class="muted">ما يقابله بالدينار</span><span>' + fmtN(p.fundedKwd, 3) + ' د.ك</span></div>' : '') +
         splitLines(c, p) + '</div>' + editBtn(p.name) + '</div>';
     }).join('') + '</div><p class="small muted">ما يصرفه أي شريك من جيبه يُقسَّم على الباقين بحسب نسبهم. التفاصيل وطريقة التحويل في تبويب «التسوية».</p>';
     h += receivedSection();
@@ -536,10 +543,16 @@
     var sumRatio = sum(c.p, function (p) { return p.ratio; });
     var h = '<div class="note">كل شريك يتحمّل نسبته من إجمالي ما دُفع في المزرعة. ما دفعه الشريك = تمويله للصندوق + ما دفعه من جيبه للمصاريف والمشتريات والرواتب.</div>';
     if (Math.abs(sumRatio - 100) > 0.01) h += '<div class="note" style="margin-top:10px;background:var(--bad-soft);color:var(--bad)">مجموع النسب ' + fmt(sumRatio) + '% وليس 100%. صحّحها من الإعدادات.</div>';
-    h += '<button class="btn ghost" style="margin-top:12px" data-a="share">إرسال تقرير للشركاء</button><h2>حساب كل شريك</h2><div class="stack">' + c.p.map(function (p) {
+    var equal = c.p.length > 0 && c.p.every(function (q) { return Math.abs(q.ratio - c.p[0].ratio) < 0.01; });
+    h += '<div class="card" style="margin-top:12px"><div class="lines" style="margin-top:0"><div><span class="muted">إجمالي ما دفعه الشركاء</span><span>' + N(c.totalPaid) + ' ' + esc(cur()) + '</span></div>' +
+      (equal ? '<div><span class="muted">÷ ' + c.p.length + ' شركاء</span><span></span></div>' : '') +
+      '<div class="t"><span>' + (equal ? 'نصيب كل شريك' : 'النصيب بحسب النسب') + '</span><span>' + (equal ? N(c.totalPaid / c.p.length) : '') + '</span></div></div>' +
+      '<p class="small muted" style="margin:8px 0 0">الفرق = ما دفعه الشريك − نصيبه. «له» يعني يستحق استرداد الفرق، و«عليه» يعني يدفع الفرق.</p></div>' +
+      '<button class="btn ghost" style="margin-top:12px" data-a="share">إرسال تقرير للشركاء</button><h2>حساب كل شريك</h2><div class="stack">' + c.p.map(function (p) {
       return '<div class="card"><div class="prow"><span class="nm">' + esc(p.name) + '</span>' + pill(p.diff) + '</div><div class="lines">' +
         '<div><span class="muted">النسبة</span><span>' + N(p.ratio) + '%</span></div>' +
-        '<div><span class="muted">مموّل للصندوق</span><span>' + N(p.funded) + '</span></div>' +
+        '<div><span class="muted">مموّل للصندوق (' + esc(cur()) + ')</span><span>' + N(p.funded) + '</span></div>' +
+        (p.fundedKwd > 0 ? '<div><span class="muted">ما يقابله بالدينار الكويتي</span><span>' + fmtN(p.fundedKwd, 3) + ' د.ك</span></div>' : '') +
         '<div><span class="muted">دفعه من جيبه</span><span>' + N(p.direct) + '</span></div>' + splitLines(c, p) +
         '<div class="t"><span>إجمالي ما دفعه</span><span>' + N(p.paid) + '</span></div>' +
         '<div><span class="muted">حصته المفروضة</span><span>' + N(p.share) + '</span></div>' +
@@ -552,6 +565,8 @@
     h += '<h2>حركة الصندوق</h2><div class="card"><div class="lines" style="margin-top:0">' +
       '<div><span class="muted">إجمالي التكاليف المدفوعة</span><span>' + N(c.paidCosts) + '</span></div>' +
       '<div><span class="muted">منها دفعها الشركاء من جيبهم</span><span>' + N(c.directAll) + '</span></div>' +
+      '<div><span class="muted">مدفوع من التمويل</span><span>' + N(c.fromFunding) + '</span></div>' +
+      '<div><span class="muted">مدفوع من الناتج (المبيعات)</span><span>' + N(c.fromProceeds) + '</span></div>' +
       '<div class="t"><span>المدفوع من الصندوق</span><span>' + N(c.fundCosts) + '</span></div></div></div>' +
       '<p class="small muted">التمويل الذي دخل الصندوق ولم يُصرف بعد يُحسب كمساهمة من الشريك، ويبقى رصيده في الصندوق.</p>';
     return h;
@@ -864,7 +879,8 @@
     L.push('تقرير المزرعة بتاريخ ' + today());
     L.push('');
     L.push('رصيد الصندوق: ' + fmt(c.cash) + ' ' + cur());
-    L.push('إجمالي التمويل: ' + fmt(c.funding));
+    L.push('إجمالي التمويل: ' + fmt(c.funding) + ' (المتبقي منه ' + fmt(c.fundBal) + ')');
+    L.push('المحصّل من المبيعات: ' + fmt(c.collected) + ' (المتبقي منه ' + fmt(c.procBal) + ')');
     var rk = sum(state.funding, function (x) { return num(x.kwd); });
     if (rk > 0) L.push('منه مستلم بالدينار الكويتي: ' + fmtN(rk, 3) + ' د.ك');
     L.push('التكاليف (بدون الرواتب): ' + fmt(c.costs));
@@ -906,7 +922,7 @@
   function openForm(type, rec) {
     var T = TYPES[type]; cur_edit = { type: type, id: rec ? rec.id : null, createdAt: rec ? rec.createdAt : null, old: rec ? stripId(rec) : null };
     var d = rec || {};
-    if (!rec) { d = { date: today() }; if (type === 'incoming' || type === 'expenses') d.paidBy = ''; if (type === 'payroll') d.paid = 'yes'; }
+    if (!rec) { d = { date: today() }; if (type === 'incoming' || type === 'expenses') d.paidBy = FUND_F; if (type === 'payroll') { d.paid = 'yes'; d.paidBy = FUND_F; } }
     var h = sheetTop((rec ? (state.isAdmin ? 'تعديل ' : 'طلب تعديل ') : (state.isAdmin ? 'تسجيل ' : 'طلب إضافة ')) + T.label) + '<form id="recform" novalidate>';
     var i = 0, fs = T.fields;
     while (i < fs.length) {
@@ -962,7 +978,7 @@
       list.map(function (x) { return '<div><span>' + esc(x.worker) + ' <span class="muted small"><span class="num">' + esc(String(x.date || '').slice(0, 7)) + '</span></span></span><span>' + N(netOf(x)) + '</span></div>'; }).join('') +
       '<div class="t"><span>الإجمالي</span><span>' + N(sum(list, netOf)) + ' ' + esc(cur()) + '</span></div></div></div>' +
       '<form id="payform" novalidate>' + fieldHtml({ k: 'payDate', t: 'date', l: 'تاريخ الصرف', req: 1 }, today()) +
-      fieldHtml({ k: 'payBy', t: 'select', l: 'صُرف بواسطة', opts: payerOpts, req: 1 }, '') +
+      fieldHtml({ k: 'payBy', t: 'select', l: 'مصدر الصرف', opts: payerOpts, req: 1 }, FUND_F) +
       '<div class="err" id="payerr" role="alert"></div><button type="submit" class="btn" id="paysave">' + (state.isAdmin ? 'تأكيد الصرف' : 'إرسال للموافقة') + '</button></form>';
     openSheet(h);
     $('payform').onsubmit = function (e) { e.preventDefault(); savePay(); };
