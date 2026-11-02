@@ -173,7 +173,7 @@
 <div id="app" dir="rtl" lang="ar">
   <header class="top">
     <div><h1>إدارة المزرعة</h1></div>
-    <div style="display:flex;gap:8px;align-items:center"><span class="badge-ro" id="ro" hidden>التسجيل بموافقة</span><button class="x" id="gear" data-a="tab" data-t="settings" aria-label="الإعدادات"></button></div>
+    <div style="display:flex;gap:8px;align-items:center"><span class="badge-ro" id="ro" hidden>التسجيل بموافقة</span><button class="x" id="gear" data-a="tab" data-t="settings" aria-label="الإعدادات"></button><button class="x" id="logout" data-a="logout" style="width:auto;padding:0 12px;font-size:13px" aria-label="خروج">خروج</button></div>
   </header>
   <main id="view"></main>
 </div>
@@ -185,53 +185,157 @@
 
 
 <script>(function () {
-  var KEY = 'farm.v1', BKEY = 'farm.v1.backup';
+  var CFG = {"firebase": {"apiKey": "AIzaSyCA-tHx4nMDkuEvw43zKLaMtzkBtXUSEEo", "authDomain": "farm-khalid.firebaseapp.com", "projectId": "farm-khalid", "storageBucket": "farm-khalid.firebasestorage.app", "messagingSenderId": "4190704722", "appId": "1:4190704722:web:7f2d198d147bba3311fb8b"}, "ownerId": "owner"};               // { firebase: {...}, ownerId: '...' }
+  var SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
   var COLS = ['settings', 'funding', 'expenses', 'incoming', 'outgoing', 'production', 'waste', 'payroll', 'pending'];
+  var DOMAIN = '@farm.app';
+  var LOCAL_KEY = 'farm.v1';
   var data = {}; COLS.forEach(function (c) { data[c] = {}; });
-  var persistent = true;
-  try { localStorage.setItem('farm.test', '1'); localStorage.removeItem('farm.test'); } catch (e) { persistent = false; }
-  try {
-    var raw = localStorage.getItem(KEY);
-    if (raw) { var o = JSON.parse(raw); COLS.forEach(function (c) { if (o && o[c] && typeof o[c] === 'object') data[c] = o[c]; }); }
-  } catch (e) { }
-  var listeners = {}, seq = 0, has = function (c, id) { return Object.prototype.hasOwnProperty.call(data[c], id); };
+  var listeners = {}, seq = 0;
+  var fb = null, fs = null, auth = null, me = null, accounts = [];
+  var ownerEmail = String(CFG.ownerId || '').trim().toLowerCase() + DOMAIN;
+
+  function emailOf(id) { id = String(id || '').trim().toLowerCase(); return id.indexOf('@') > 0 ? id : id + DOMAIN; }
   function clone(x) { return JSON.parse(JSON.stringify(x)); }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) { persistent = false; } }
+  function has(c, id) { return Object.prototype.hasOwnProperty.call(data[c], id); }
   function newId() { return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7) + (seq++).toString(36); }
+
+  // ---------- change feed (same shape the app already uses) ----------
   function docSnap(c, id) { var ex = has(c, id); return { id: id, exists: ex, data: function () { return ex ? clone(data[c][id]) : undefined; }, metadata: {} }; }
   function collSnap(c) { var docs = Object.keys(data[c]).sort().map(function (id) { return docSnap(c, id); }); return { docs: docs, size: docs.length, empty: !docs.length, metadata: {} }; }
   function sub(key, fn) { (listeners[key] = listeners[key] || []).push(fn); return function () { listeners[key] = (listeners[key] || []).filter(function (f) { return f !== fn; }); }; }
   function fire(key, snap) { (listeners[key] || []).slice().forEach(function (f) { try { f(snap()); } catch (e) { } }); }
-  function notify(c, id) { fire('c:' + c, function () { return collSnap(c); }); fire('d:' + c + '/' + id, function () { return docSnap(c, id); }); }
-  function notifyAll() {
-    COLS.forEach(function (c) {
-      fire('c:' + c, function () { return collSnap(c); });
-      Object.keys(listeners).forEach(function (k) { var p = 'd:' + c + '/'; if (k.indexOf(p) === 0) { var id = k.slice(p.length); fire(k, function () { return docSnap(c, id); }); } });
-    });
+  function notifyColl(c) {
+    fire('c:' + c, function () { return collSnap(c); });
+    Object.keys(listeners).forEach(function (k) { var p = 'd:' + c + '/'; if (k.indexOf(p) === 0) { var id = k.slice(p.length); fire(k, function () { return docSnap(c, id); }); } });
   }
-  function ensure(c) { if (!data[c]) data[c] = {}; }
-  function docRef(c, id) {
-    ensure(c);
-    return {
-      id: id, path: c + '/' + id,
-      get: function () { return Promise.resolve(docSnap(c, id)); },
-      set: function (d) { data[c][id] = clone(d); save(); notify(c, id); return Promise.resolve(); },
-      update: function (d) { if (!has(c, id)) return Promise.reject({ code: 'invalid_argument', message: 'missing' }); Object.assign(data[c][id], clone(d)); save(); notify(c, id); return Promise.resolve(); },
-      delete: function () { delete data[c][id]; save(); notify(c, id); return Promise.resolve(); },
-      onSnapshot: function (next) { var u = sub('d:' + c + '/' + id, next); setTimeout(function () { next(docSnap(c, id)); }, 0); return u; }
-    };
+
+  // ---------- firestore wiring ----------
+  function fireErr(e) { var c = e && e.code; return { code: c === 'not-found' || c === 'permission-denied' ? 'invalid_argument' : (c || 'error'), message: e && e.message }; }
+  function write(c, id, op) {
+    // do not wait for the server: offline writes are queued by the SDK and sync later
+    var p; try { p = op(fs.collection(c).doc(id)); } catch (e) { return Promise.reject(fireErr(e)); }
+    if (p && p.catch) p.catch(function (e) { console.warn('write failed', c, id, e && e.code); try { window.__farmCloud.onWriteError(e); } catch (x) { } });
+    return Promise.resolve();
   }
   var db = {
-    doc: function (p) { var parts = p.split('/'); var id = parts.pop(); return docRef(parts.join('/'), id); },
+    doc: function (path) {
+      var parts = path.split('/'), id = parts.pop(), c = parts.join('/');
+      return {
+        id: id, path: path,
+        get: function () { return Promise.resolve(docSnap(c, id)); },
+        set: function (d) { data[c] = data[c] || {}; return write(c, id, function (r) { return r.set(clone(d)); }); },
+        update: function (d) { if (!has(c, id)) return Promise.reject({ code: 'invalid_argument', message: 'missing' }); return write(c, id, function (r) { return r.update(clone(d)); }); },
+        delete: function () { return write(c, id, function (r) { return r.delete(); }); },
+        onSnapshot: function (next) { var u = sub('d:' + c + '/' + id, next); setTimeout(function () { next(docSnap(c, id)); }, 0); return u; }
+      };
+    },
     collection: function (c) {
-      ensure(c);
       return {
         path: c,
-        doc: function (id) { return docRef(c, id || newId()); },
+        doc: function (id) { return db.doc(c + '/' + (id || newId())); },
         onSnapshot: function (next) { var u = sub('c:' + c, next); setTimeout(function () { next(collSnap(c)); }, 0); return u; }
       };
     }
   };
+
+  var firstSnap = {}, unsubs = [];
+  function startFeeds() {
+    var waits = COLS.map(function (c) {
+      return new Promise(function (res) {
+        var done = false;
+        var un = fs.collection(c).onSnapshot(function (snap) {
+          var o = {}; snap.docs.forEach(function (d) { o[d.id] = d.data(); });
+          data[c] = o; notifyColl(c); if (!done) { done = true; res(); }
+        }, function (e) { if (!done) { done = true; res(); } onFeedError(e); });
+        unsubs.push(un);
+      });
+    });
+    unsubs.push(fs.collection('accounts').onSnapshot(function (snap) {
+      accounts = snap.docs.map(function (d) { var o = d.data() || {}; o.email = d.id; return o; });
+      try { window.__farmCloud.onAccounts(); } catch (e) { }
+    }, function () { }));
+    return Promise.race([Promise.all(waits), new Promise(function (r) { setTimeout(r, 9000); })]);
+  }
+  function stopFeeds() { unsubs.forEach(function (u) { try { u(); } catch (e) { } }); unsubs = []; COLS.forEach(function (c) { data[c] = {}; }); }
+  var feedErrShown = false;
+  function onFeedError(e) {
+    if (e && e.code === 'permission-denied' && !feedErrShown) {
+      feedErrShown = true;
+      auth.signOut().then(function () { location.reload(); });
+      try { sessionStorage.setItem('farm.loginerr', 'هذا الحساب غير مفعّل. اطلب من صاحب المزرعة تفعيله.'); } catch (x) { }
+    }
+  }
+
+  // ---------- login screen ----------
+  function css() {
+    var st = document.createElement('style');
+    st.textContent = '#fl{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;background:#EFF3EC;color:#14201A;font:16px -apple-system,BlinkMacSystemFont,sans-serif}' +
+      '#fl .b{width:100%;max-width:380px}#fl h1{margin:0 0 4px;font-size:26px}#fl p{margin:0 0 20px;color:#5B6B60}' +
+      '#fl label{display:block;margin:12px 0 6px;font-size:14px;color:#5B6B60}#fl input{width:100%;box-sizing:border-box;min-height:48px;border-radius:12px;border:1px solid #D5DDD2;background:#fff;color:inherit;padding:0 14px;font:inherit;direction:ltr;text-align:left}' +
+      '#fl button{width:100%;min-height:50px;margin-top:20px;border:0;border-radius:12px;background:#2D6A3E;color:#fff;font:600 16px inherit;font-family:inherit}#fl .e{color:#B3261E;min-height:20px;margin-top:12px;font-size:14px}#fl button:disabled{opacity:.6}' +
+      '@media (prefers-color-scheme: dark){#fl{background:#0F1711;color:#EAF1EA}#fl p,#fl label{color:#9DB0A2}#fl input{background:#1A241D;border-color:#2C3A30}#fl button{background:#7FBF8E;color:#0F1711}#fl .e{color:#FF8A80}}';
+    document.head.appendChild(st);
+  }
+  function showLogin(msg) {
+    return new Promise(function (resolve) {
+      var d = document.getElementById('fl');
+      if (!d) { d = document.createElement('div'); d.id = 'fl'; d.setAttribute('dir', 'rtl'); document.body.appendChild(d); }
+      d.innerHTML = '<form class="b" novalidate><h1>إدارة المزرعة</h1><p>سجّل الدخول لعرض الحسابات</p>' +
+        '<label for="fl_id">رقم الدخول</label><input id="fl_id" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="email">' +
+        '<label for="fl_pw">كلمة السر</label><input id="fl_pw" type="password" autocomplete="current-password">' +
+        '<div class="e" id="fl_e" role="alert"></div><button type="submit" id="fl_b">دخول</button></form>';
+      var e = d.querySelector('#fl_e'); e.textContent = msg || '';
+      var form = d.querySelector('form');
+      form.onsubmit = function (ev) {
+        ev.preventDefault();
+        var id = d.querySelector('#fl_id').value, pw = d.querySelector('#fl_pw').value;
+        if (!id.trim() || !pw) { e.textContent = 'اكتب رقم الدخول وكلمة السر'; return; }
+        var b = d.querySelector('#fl_b'); b.disabled = true; e.textContent = '';
+        auth.signInWithEmailAndPassword(emailOf(id), pw).then(function () { resolve(); }, function (err) {
+          b.disabled = false; var c = err && err.code;
+          e.textContent = c === 'auth/network-request-failed' ? 'تعذّر الاتصال بالإنترنت' : c === 'auth/too-many-requests' ? 'محاولات كثيرة، حاول بعد قليل' : 'رقم الدخول أو كلمة السر غير صحيحة';
+        });
+      };
+    });
+  }
+  function hideLogin() { var d = document.getElementById('fl'); if (d) d.remove(); }
+
+  function loadScript(src) {
+    return new Promise(function (res, rej) { var s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = function () { rej(new Error('load ' + src)); }; document.head.appendChild(s); });
+  }
+  function ensureSdk() {
+    if (window.firebase) return Promise.resolve();
+    return loadScript(SDK + 'firebase-app-compat.js').then(function () { return loadScript(SDK + 'firebase-auth-compat.js'); }).then(function () { return loadScript(SDK + 'firebase-firestore-compat.js'); });
+  }
+
+  // ---------- first-time upload of data kept on this phone ----------
+  function localData() {
+    try { var o = JSON.parse(localStorage.getItem(LOCAL_KEY) || 'null'); return o && o.settings && o.settings.main ? o : null; } catch (e) { return null; }
+  }
+  async function maybeMigrate() {
+    var l = localData(); if (!l) return;
+    var snap = await fs.collection('settings').doc('main').get();
+    if (snap.exists) return;
+    if (!window.confirm('وُجدت بيانات محفوظة على هذا الجوال. هل ترفعها إلى الحساب المشترك؟')) return;
+    await importToCloud(l);
+    try { localStorage.setItem(LOCAL_KEY + '.uploaded', String(Date.now())); } catch (e) { }
+  }
+  async function importToCloud(obj) {
+    var ops = [];
+    COLS.forEach(function (c) {
+      var inc = obj[c] || {};
+      Object.keys(data[c]).forEach(function (id) { if (!inc[id]) ops.push(['del', c, id]); });
+      Object.keys(inc).forEach(function (id) { ops.push(['set', c, id, inc[id]]); });
+    });
+    for (var i = 0; i < ops.length; i += 400) {
+      var b = fs.batch();
+      ops.slice(i, i + 400).forEach(function (o) { var r = fs.collection(o[1]).doc(o[2]); if (o[0] === 'del') b.delete(r); else b.set(r, clone(o[3])); });
+      await b.commit();
+    }
+  }
+
+  // ---------- store API used by backup / restore UI ----------
   function validate(o) {
     if (!o || o.app !== 'farm' || !o.data || typeof o.data !== 'object') return { ok: false, msg: 'هذا ليس ملف نسخة احتياطية من تطبيق المزرعة' };
     var count = 0;
@@ -244,16 +348,67 @@
   }
   window.__farmStore = {
     exportAll: function () { return { app: 'farm', version: 1, exportedAt: new Date().toISOString(), data: clone(data) }; },
-    importAll: function (o) { COLS.forEach(function (c) { data[c] = o.data[c] ? clone(o.data[c]) : {}; }); save(); notifyAll(); },
+    importAll: function (o) { return importToCloud(o.data).catch(function (e) { console.warn('restore failed', e); }); },
     validate: validate,
-    persistent: function () { return persistent; },
-    lastBackup: function () { try { return parseInt(localStorage.getItem(BKEY) || '0', 10) || 0; } catch (e) { return 0; } },
-    markBackup: function () { try { localStorage.setItem(BKEY, String(Date.now())); } catch (e) { } }
+    persistent: function () { return true; },
+    lastBackup: function () { try { return parseInt(localStorage.getItem('farm.v1.backup') || '0', 10) || 0; } catch (e) { return 0; } },
+    markBackup: function () { try { localStorage.setItem('farm.v1.backup', String(Date.now())); } catch (e) { } }
   };
-  var user = { canEdit: function () { return Promise.resolve(true); }, isOwner: function () { return Promise.resolve(true); }, can: function () { return Promise.resolve(true); }, id: function () { return Promise.resolve('local'); }, profiles: function () { return Promise.resolve({}); } };
-  window.claude = { use: function (n) { return Promise.resolve(n === 'db' ? db : n === 'user' ? user : null); } };
-  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { }
-})();</script>
+
+  // ---------- accounts (owner only) ----------
+  window.__farmCloud = {
+    isOwner: function () { return !!me && me.email === ownerEmail; },
+    accounts: function () { return accounts.slice(); },
+    ownerEmail: ownerEmail,
+    onAccounts: function () { },
+    onWriteError: function () { },
+    logout: function () { return auth.signOut().then(function () { location.reload(); }); },
+    createAccount: async function (id, pw, label) {
+      id = String(id || '').trim().toLowerCase();
+      if (!/^[a-z0-9._-]{3,30}$/.test(id)) throw { msg: 'رقم الدخول: حروف إنجليزية صغيرة أو أرقام (3 على الأقل)' };
+      if (String(pw || '').length < 6) throw { msg: 'كلمة السر 6 أحرف أو أرقام على الأقل' };
+      var email = id + DOMAIN;
+      var second = firebase.apps.filter(function (a) { return a.name === 'second'; })[0] || firebase.initializeApp(CFG.firebase, 'second');
+      try { await second.auth().createUserWithEmailAndPassword(email, pw); }
+      catch (e) { throw { msg: e && e.code === 'auth/email-already-in-use' ? 'رقم الدخول مستخدم من قبل' : e && e.code === 'auth/weak-password' ? 'كلمة السر ضعيفة' : e && e.code === 'auth/operation-not-allowed' ? 'فعّل طريقة Email/Password في Firebase' : 'تعذّر إنشاء الحساب' }; }
+      try { await second.auth().signOut(); } catch (e) { }
+      await fs.collection('accounts').doc(email).set({ id: id, label: String(label || '').trim(), createdAt: Date.now() });
+    },
+    removeAccess: function (email) { return fs.collection('accounts').doc(email).delete(); }
+  };
+
+  var userApi = {
+    canEdit: function () { return Promise.resolve(window.__farmCloud.isOwner()); },
+    isOwner: function () { return Promise.resolve(window.__farmCloud.isOwner()); },
+    can: function () { return Promise.resolve(window.__farmCloud.isOwner()); },
+    id: function () { return Promise.resolve(me ? me.uid : 'anon'); },
+    profiles: function () { return Promise.resolve({}); }
+  };
+
+  var ready = null;
+  function init() {
+    if (ready) return ready;
+    ready = (async function () {
+      css();
+      var msg = ''; try { msg = sessionStorage.getItem('farm.loginerr') || ''; sessionStorage.removeItem('farm.loginerr'); } catch (e) { }
+      try { await ensureSdk(); }
+      catch (e) { showLogin('تعذّر تحميل التطبيق. تأكد من الإنترنت وأعد المحاولة.'); throw e; }
+      fb = window.firebase; fb.initializeApp(CFG.firebase); auth = fb.auth(); fs = fb.firestore();
+      try { await fs.enablePersistence({ synchronizeTabs: true }); } catch (e) { }
+      var user = await new Promise(function (res) { var u = auth.onAuthStateChanged(function (x) { u(); res(x); }); });
+      if (!user) { await showLogin(msg); user = auth.currentUser; }
+      me = user;
+      if (window.__farmCloud.isOwner()) {
+        try { await fs.collection('accounts').doc(ownerEmail).set({ id: CFG.ownerId, label: 'المالك', createdAt: Date.now() }); } catch (e) { }
+      }
+      await startFeeds();
+      if (window.__farmCloud.isOwner()) { try { await maybeMigrate(); } catch (e) { console.warn('migrate', e); } }
+      hideLogin();
+    })();
+    return ready;
+  }
+  window.claude = { use: function (n) { return init().then(function () { return n === 'db' ? db : n === 'user' ? userApi : null; }); } };
+})()</script>
 <script>
 (function () {
   'use strict';
@@ -620,7 +775,7 @@
       '<button type="button" class="btn ghost" data-a="equal">تقسيم النسب بالتساوي</button>' +
       '<button type="submit" class="btn">حفظ الإعدادات</button></form></div>' +
       '<p class="small muted">تغيير اسم شريك بعد تسجيل بياناته يفصل سجلاته القديمة عنه. غيّر النسب بحرية.</p>' +
-      '<h2>النسخ الاحتياطي</h2><div class="card"><p style="margin:0 0 4px">بيانات التطبيق محفوظة على هذا الجوال فقط. إذا حذفت التطبيق من الشاشة الرئيسية أو مسحت بيانات المتصفح تضيع البيانات، فخذ نسخة احتياطية بانتظام.</p><p class="small muted" style="margin:0">آخر نسخة: ' + lastBackupText() + '</p><button class="btn" data-a="backup">أخذ نسخة احتياطية</button><button class="btn ghost" data-a="restore">استعادة من نسخة</button></div><div class="note" style="margin-top:12px">لإرسال الأرقام للشركاء استخدم زر «إرسال تقرير للشركاء» في الرئيسية، فيُرسل الملخص على واتساب.</div>';
+      '<h2>حسابات الشركاء</h2>' + accountsCard() + '<h2>النسخ الاحتياطي</h2><div class="card"><p style="margin:0 0 4px">البيانات محفوظة على الإنترنت في حساب المزرعة وتظهر للشركاء المفعّلين. النسخة الاحتياطية اختيارية لحفظ نسخة عندك.</p><p class="small muted" style="margin:0">آخر نسخة: ' + lastBackupText() + '</p><button class="btn" data-a="backup">أخذ نسخة احتياطية</button><button class="btn ghost" data-a="restore">استعادة من نسخة</button></div>';
     return h;
   }
 
@@ -784,6 +939,7 @@
   var store = window.__farmStore;
   function lastBackupText() { var t = store.lastBackup(); return t ? dateOf(t) : 'لم تؤخذ نسخة بعد'; }
   function backupReminder() {
+    if (!state.isAdmin) return '';
     if (!store.persistent()) return '<div class="note" style="margin-bottom:12px;background:var(--bad-soft);color:var(--bad)">التخزين على هذا الجوال غير متاح الآن، فلن تُحفظ البيانات. افتح التطبيق من الشاشة الرئيسية بدل المتصفح.</div>';
     if (totalRecords() === 0) return '';
     var t = store.lastBackup(), days = t ? (Date.now() - t) / 86400000 : 999;
@@ -838,6 +994,25 @@
     var b = $('rbtn');
     if (!restoreArmed) { restoreArmed = true; b.textContent = 'سيُستبدل كل شيء. اضغط مرة أخرى للتأكيد (' + chk.count + ' سجلًا)'; return; }
     store.importAll(obj); toast('تمت الاستعادة'); closeSheet(); state.tab = 'home'; render();
+  }
+
+  window.__farmCloud.onAccounts = function () { var ae = document.activeElement; if (state.tab === 'settings' && !(ae && ae.tagName === 'INPUT')) render(); };
+  function accountsCard() {
+    var list = window.__farmCloud.accounts().filter(function (a) { return a.email !== window.__farmCloud.ownerEmail; });
+    var rows = list.length ? list.map(function (a) {
+      return '<div class="prow" style="padding:8px 0"><span><b>' + esc(a.label || a.id) + '</b> <span class="small muted" dir="ltr">' + esc(a.id) + '</span></span><button class="x" style="width:auto;padding:0 12px" data-a="rmacct" data-e="' + esc(a.email) + '">إيقاف</button></div>';
+    }).join('') : '<p class="small muted" style="margin:0 0 8px">لا توجد حسابات للشركاء بعد.</p>';
+    return '<div class="card">' + rows +
+      '<div class="field"><label for="ac_l">اسم الشريك</label><input id="ac_l" type="text" autocomplete="off"></div>' +
+      '<div class="field"><label for="ac_i">رقم الدخول (حروف إنجليزية صغيرة أو أرقام)</label><input id="ac_i" type="text" dir="ltr" autocomplete="off" autocapitalize="none"></div>' +
+      '<div class="field"><label for="ac_p">كلمة السر (6 على الأقل)</label><input id="ac_p" type="text" dir="ltr" autocomplete="off" autocapitalize="none"></div>' +
+      '<div class="err" id="acerr" role="alert"></div><button class="btn" data-a="mkacct" id="acbtn">إنشاء حساب شريك</button>' +
+      '<p class="small muted" style="margin:10px 0 0">أرسل الرقم وكلمة السر للشريك. يدخل بهما ويشاهد الأرقام فقط دون تعديل. لتغيير كلمة سر شريك أنشئ له رقم دخول جديدًا وأوقف القديم.</p></div>';
+  }
+  async function makeAccount() {
+    var err = $('acerr'), b = $('acbtn'); err.textContent = ''; b.disabled = true;
+    try { await window.__farmCloud.createAccount($('ac_i').value, $('ac_p').value, $('ac_l').value); toast('تم إنشاء الحساب'); render(); }
+    catch (e) { err.textContent = (e && e.msg) || 'تعذّر إنشاء الحساب'; b.disabled = false; }
   }
   var paidName = '', paidRows = [];
   function editBtn(name) { return viewer() ? '' : '<button class="paybtn" style="margin-top:12px" data-a="editpaid" data-n="' + esc(name) + '">تعديل المبالغ المدفوعة</button>'; }
@@ -1074,6 +1249,9 @@
     else if (a === 'copybackup') copyBackup();
     else if (a === 'restore') openRestore();
     else if (a === 'dorestore') doRestore();
+    else if (a === 'logout') window.__farmCloud.logout();
+    else if (a === 'mkacct') makeAccount();
+    else if (a === 'rmacct') { if (confirm('إيقاف دخول هذا الشريك؟')) window.__farmCloud.removeAccess(b.getAttribute('data-e')).then(function () { toast('تم الإيقاف'); }); }
     else if (a === 'noop') { }
     else if (a === 'equal') { var q = [33.33, 33.33, 33.34]; for (var i = 0; i < 3; i++) $('pr' + i).value = q[i]; }
   });

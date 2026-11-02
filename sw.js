@@ -1,4 +1,4 @@
-var CACHE = 'farm-pwa-v5';
+var CACHE = 'farm-pwa-cloud1';
 var SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function () { return self.skipWaiting(); }));
@@ -16,7 +16,7 @@ self.addEventListener('fetch', function (e) {
       var copy = res.clone(); caches.open(CACHE).then(function (c) { c.put(req, copy); });
       return res;
     }).catch(function () { return caches.match(req).then(function (r) { return r || caches.match('index.html'); }); }));
-  } else if (/(^|\.)(fonts\.googleapis\.com|fonts\.gstatic\.com)$/.test(url.hostname)) {
+  } else if (/(^|\.)(fonts\.googleapis\.com|fonts\.gstatic\.com|www\.gstatic\.com)$/.test(url.hostname)) {
     e.respondWith(caches.match(req).then(function (r) {
       return r || fetch(req).then(function (res) { var copy = res.clone(); caches.open(CACHE).then(function (c) { c.put(req, copy); }); return res; });
     }));
