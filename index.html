@@ -173,7 +173,7 @@
 <div id="app" dir="rtl" lang="ar">
   <header class="top">
     <div><h1>إدارة المزرعة</h1></div>
-    <div style="display:flex;gap:8px;align-items:center"><span class="badge-ro" id="ro" hidden>التسجيل بموافقة</span><button class="x" id="gear" data-a="tab" data-t="settings" aria-label="الإعدادات"></button><button class="x" id="logout" data-a="logout" style="width:auto;padding:0 12px;font-size:13px" aria-label="خروج">خروج</button></div>
+    <div style="display:flex;gap:8px;align-items:center"><span class="badge-ro" id="ro" hidden>التسجيل بموافقة</span><button class="x" id="gear" data-a="tab" data-t="settings" aria-label="الإعدادات"></button><button class="x" id="actbtn" data-a="activity" style="width:auto;padding:0 12px;font-size:13px">النشاط</button><button class="x" id="logout" data-a="logout" style="width:auto;padding:0 12px;font-size:13px" aria-label="خروج">خروج</button></div>
   </header>
   <main id="view"></main>
 </div>
@@ -192,7 +192,7 @@
   var LOCAL_KEY = 'farm.v1';
   var data = {}; COLS.forEach(function (c) { data[c] = {}; });
   var listeners = {}, seq = 0;
-  var fb = null, fs = null, auth = null, me = null, accounts = [];
+  var fb = null, fs = null, auth = null, me = null, accounts = [], activity = [], myLabel = '', actReady = false;
   var ownerEmail = String(CFG.ownerId || '').trim().toLowerCase() + DOMAIN;
 
   function emailOf(id) { id = String(id || '').trim().toLowerCase(); return id.indexOf('@') > 0 ? id : id + DOMAIN; }
@@ -254,6 +254,15 @@
     unsubs.push(fs.collection('accounts').onSnapshot(function (snap) {
       accounts = snap.docs.map(function (d) { var o = d.data() || {}; o.email = d.id; return o; });
       try { window.__farmCloud.onAccounts(); } catch (e) { }
+    }, function () { }));
+    unsubs.push(fs.collection('activity').orderBy('at', 'desc').limit(200).onSnapshot(function (snap) {
+      var fresh = [];
+      if (actReady && snap.docChanges) snap.docChanges().forEach(function (ch) {
+        if (ch.type === 'added' && !ch.doc.metadata.hasPendingWrites) { var o = ch.doc.data(); if (o && o.email !== (me && me.email)) fresh.push(o); }
+      });
+      actReady = true;
+      activity = snap.docs.map(function (d) { var o = d.data() || {}; o.id = d.id; return o; });
+      try { window.__farmCloud.onActivity(fresh); } catch (e) { }
     }, function () { }));
     return Promise.race([Promise.all(waits), new Promise(function (r) { setTimeout(r, 9000); })]);
   }
@@ -360,6 +369,15 @@
     isOwner: function () { return !!me && me.email === ownerEmail; },
     accounts: function () { return accounts.slice(); },
     ownerEmail: ownerEmail,
+    myEmail: function () { return me ? me.email : ''; },
+    activity: function () { return activity.slice(); },
+    onActivity: function () { },
+    logActivity: function (e) {
+      try {
+        e = clone(e); e.email = me.email; e.by = myLabel || (me.email || '').split('@')[0]; e.at = Date.now();
+        fs.collection('activity').doc(newId()).set(e).catch(function (x) { console.warn('activity', x && x.code); });
+      } catch (x) { }
+    },
     onAccounts: function () { },
     onWriteError: function () { },
     logout: function () { return auth.signOut().then(function () { location.reload(); }); },
@@ -378,9 +396,9 @@
   };
 
   var userApi = {
-    canEdit: function () { return Promise.resolve(window.__farmCloud.isOwner()); },
+    canEdit: function () { return Promise.resolve(true); },
     isOwner: function () { return Promise.resolve(window.__farmCloud.isOwner()); },
-    can: function () { return Promise.resolve(window.__farmCloud.isOwner()); },
+    can: function () { return Promise.resolve(true); },
     id: function () { return Promise.resolve(me ? me.uid : 'anon'); },
     profiles: function () { return Promise.resolve({}); }
   };
@@ -401,6 +419,7 @@
       if (window.__farmCloud.isOwner()) {
         try { await fs.collection('accounts').doc(ownerEmail).set({ id: CFG.ownerId, label: 'المالك', createdAt: Date.now() }); } catch (e) { }
       }
+      try { var mine = await fs.collection('accounts').doc(me.email).get(); if (mine.exists) { var md = mine.data() || {}; myLabel = md.label || md.id || ''; } } catch (e) { }
       await startFeeds();
       if (window.__farmCloud.isOwner()) { try { await maybeMigrate(); } catch (e) { console.warn('migrate', e); } }
       hideLogin();
@@ -420,7 +439,7 @@
   var REASONS = ['تلف', 'أمراض وآفات', 'عوامل جوية', 'سوء تخزين', 'سرقة', 'انتهاء صلاحية', 'أخرى'];
   var COLLS = ['funding', 'expenses', 'incoming', 'outgoing', 'production', 'waste', 'payroll'];
 
-  var state = { settings: null, loaded: {}, isAdmin: false, roleKnown: false, myId: null, pending: [], names: {}, busy: false, tab: 'home', recType: 'expenses', dbOk: true };
+  var state = { settings: null, loaded: {}, isAdmin: false, isOwner: false, roleKnown: false, myId: null, pending: [], names: {}, busy: false, tab: 'home', recType: 'expenses', dbOk: true };
   COLLS.forEach(function (c) { state[c] = []; });
   var dbh = null, userNs = null;
 
@@ -616,6 +635,7 @@
   }
   function renderNav() {
     var items = [['home', 'الرئيسية', 'home'], ['settle', 'التسوية', 'scale'], ['add', 'إضافة', 'plus'], ['records', 'السجلات', 'list'], ['settings', 'الإعدادات', 'sliders'], ['requests', 'الطلبات', 'inbox']].filter(function (it) {
+      if (it[0] === 'settings' && !state.isOwner) return false;
       if (viewer()) return it[0] === 'home' || it[0] === 'settle' || it[0] === 'records';
       if (it[0] === 'requests') return state.pending.length > 0 || state.tab === 'requests';
       return true;
@@ -634,7 +654,7 @@
   }
   function viewHome(c) {
     if (!state.settings) return state.loaded.settings ? viewSetupNeeded() : '<div class="empty">جارٍ التحميل…</div>';
-    var h = reqBanner() + backupReminder() + '<div class="hero"><div class="lbl">رصيد صندوق المزرعة الآن</div><div class="big">' + N(c.cash) + '<small>' + esc(cur()) + '</small></div>' +
+    var h = reqBanner() + backupReminder() + activityBanner() + '<div class="hero"><div class="lbl">رصيد صندوق المزرعة الآن</div><div class="big">' + N(c.cash) + '<small>' + esc(cur()) + '</small></div>' +
       '<div class="row"><span>المتبقي من التمويل <b>' + N(c.fundBal) + '</b></span><span>المتبقي من الناتج <b>' + N(c.procBal) + '</b></span></div></div>';
     if (totalRecords() === 0) h += '<div class="note" style="margin-top:12px">لا توجد سجلات بعد. اضغط زر <b>+</b> وابدأ بتسجيل تمويل كل شريك.</div>';
     h += '<div class="grid">' +
@@ -723,7 +743,7 @@
     }).join('') + '</div>';
     h += '<h2>التحويلات المقترحة</h2>';
     var tr = num(state.settings.todayRate);
-    h += '<div class="card"><form id="rateform" novalidate><div class="field" style="margin-bottom:8px"><label for="trate">سعر صرف اليوم (جنيه مقابل 1 دينار كويتي)</label><input id="trate" type="text" inputmode="decimal" autocomplete="off" value="' + (tr > 0 ? esc(tr) : '') + '"></div>' +
+    h += !state.isOwner ? '<div class="card"><div class="lines" style="margin-top:0"><div><span class="muted">سعر صرف اليوم (جنيه لكل دينار)</span><span>' + (tr > 0 ? fmtN(tr, 3) : '—') + '</span></div></div></div>' : '<div class="card"><form id="rateform" novalidate><div class="field" style="margin-bottom:8px"><label for="trate">سعر صرف اليوم (جنيه مقابل 1 دينار كويتي)</label><input id="trate" type="text" inputmode="decimal" autocomplete="off" value="' + (tr > 0 ? esc(tr) : '') + '"></div>' +
       '<p class="small muted" style="margin:0 0 8px">' + (tr > 0 ? 'آخر تحديث للسعر: ' + esc(state.settings.rateDate || '') : 'اكتب سعر اليوم ليظهر ما يقابل كل تحويل بالدينار الكويتي.') + '</p>' +
       '<div class="err" id="rateerr" role="alert"></div><button type="submit" class="btn ghost" style="margin-top:0">حفظ سعر اليوم</button></form></div>';
     if (!c.transfers.length) h += '<div class="card empty" style="margin-top:12px"><b>لا توجد تحويلات مطلوبة</b>الحسابات متساوية بين الشركاء حاليًا.</div>';
@@ -760,7 +780,7 @@
     return h;
   }
   function viewSettings() {
-    if (!state.isAdmin) {
+    if (!state.isOwner) {
       var s0 = state.settings;
       return '<div class="card"><b>الشركاء ونسبهم</b><div class="lines">' + (s0 ? s0.partners.map(function (p) { return '<div><span>' + esc(p.name) + '</span><span>' + N(p.ratio) + '%</span></div>'; }).join('') : '') + '</div></div><div class="note" style="margin-top:12px">تعديل الإعدادات من صلاحية صاحب الصفحة فقط.</div>';
     }
@@ -835,6 +855,7 @@
     if (state.isAdmin) {
       var ref = dbh.collection(coll).doc(id);
       if (op === 'set') await ref.set(data); else if (op === 'update') await ref.update(data); else await ref.delete();
+      try { logAct(op, coll, id, data, old, kind); } catch (e) { }
       return 'done';
     }
     var req = { op: op, coll: coll, id: id, kind: kind, by: state.myId || '', createdAt: Date.now(), status: 'pending' };
@@ -874,7 +895,7 @@
   function render() {
     var c = compute(); cache = c;
     var ro = $('ro'); ro.hidden = !viewer(); ro.textContent = 'عرض فقط';
-    $('gear').hidden = true;
+    $('gear').hidden = true; var ab = $('actbtn'); if (ab) { var un = unseenList().length; ab.textContent = 'النشاط' + (un ? ' (' + un + ')' : ''); }
     $('gear').innerHTML = icon('gear');
     renderNav();
     var v = $('view');
@@ -1009,6 +1030,46 @@
       '<div class="err" id="acerr" role="alert"></div><button class="btn" data-a="mkacct" id="acbtn">إنشاء حساب شريك</button>' +
       '<p class="small muted" style="margin:10px 0 0">أرسل الرقم وكلمة السر للشريك. يدخل بهما ويشاهد الأرقام فقط دون تعديل. لتغيير كلمة سر شريك أنشئ له رقم دخول جديدًا وأوقف القديم.</p></div>';
   }
+  function actAmount(coll, r) {
+    if (coll === 'funding' || coll === 'expenses') return num(r.amount);
+    if (coll === 'incoming') return num(r.paid) || num(r.qty) * num(r.price);
+    if (coll === 'outgoing') return num(r.collected) || num(r.qty) * num(r.price);
+    if (coll === 'payroll') return netOf(r);
+    return 0;
+  }
+  function logAct(op, coll, id, data, old, kind) {
+    var T = TYPES[coll]; if (!T) return;
+    var rec = Object.assign({}, old || {}, data || {}), title = '';
+    try { title = T.title(rec) || ''; } catch (e) { }
+    window.__farmCloud.logActivity({ op: op === 'delete' ? 'delete' : (kind || 'edit'), coll: coll, label: T.label, title: String(title).slice(0, 80), amount: actAmount(coll, rec) });
+  }
+  function seenAt() { try { return parseInt(localStorage.getItem('farm.seen') || '0', 10) || 0; } catch (e) { return 0; } }
+  try { if (!localStorage.getItem('farm.seen')) localStorage.setItem('farm.seen', String(Date.now())); } catch (e) { }
+  function unseenList() { var me = window.__farmCloud.myEmail(), t = seenAt(); return window.__farmCloud.activity().filter(function (a) { return a.email !== me && a.at > t; }); }
+  function whenText(t) { var d = new Date(t); return d.toLocaleDateString('en-CA') + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); }
+  function describeAct(a) {
+    var v = { add: 'أضاف', edit: 'عدّل', delete: 'حذف', pay: 'صرف' }[a.op] || 'عدّل';
+    return a.by + ' ' + v + ' ' + a.label + (a.title ? ' «' + a.title + '»' : '') + (a.amount ? ' بمبلغ ' + fmt(a.amount) + ' ' + cur() : '');
+  }
+  function activityBanner() {
+    var n = unseenList().length; if (!n) return '';
+    return '<button class="banner" data-a="activity"><b>' + n + (n === 1 ? ' تغيير جديد' : ' تغييرات جديدة') + ' من الشركاء</b><span>عرض</span></button>';
+  }
+  function openActivity() {
+    var list = window.__farmCloud.activity().slice(0, 60), me = window.__farmCloud.myEmail(), t = seenAt();
+    var h = sheetTop('نشاط الشركاء');
+    h += list.length ? '<div class="stack">' + list.map(function (a) {
+      var fresh = a.email !== me && a.at > t;
+      return '<div class="card" style="' + (fresh ? 'border-color:var(--accent)' : '') + '"><div>' + esc(describeAct(a)) + '</div><div class="small muted" style="margin-top:4px">' + esc(whenText(a.at)) + (a.email === me ? ' · أنت' : '') + '</div></div>';
+    }).join('') + '</div>' : '<div class="card empty"><b>لا يوجد نشاط بعد</b>تظهر هنا إضافات وتعديلات وحذف الشركاء.</div>';
+    openSheet(h);
+    try { localStorage.setItem('farm.seen', String(Date.now())); } catch (e) { }
+    render();
+  }
+  window.__farmCloud.onActivity = function (fresh) {
+    fresh.forEach(function (a) { toast(describeAct(a)); });
+    var ae = document.activeElement; if (!(ae && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT' || ae.tagName === 'TEXTAREA'))) render();
+  };
   async function makeAccount() {
     var err = $('acerr'), b = $('acbtn'); err.textContent = ''; b.disabled = true;
     try { await window.__farmCloud.createAccount($('ac_i').value, $('ac_p').value, $('ac_l').value); toast('تم إنشاء الحساب'); render(); }
@@ -1250,6 +1311,7 @@
     else if (a === 'restore') openRestore();
     else if (a === 'dorestore') doRestore();
     else if (a === 'logout') window.__farmCloud.logout();
+    else if (a === 'activity') openActivity();
     else if (a === 'mkacct') makeAccount();
     else if (a === 'rmacct') { if (confirm('إيقاف دخول هذا الشريك؟')) window.__farmCloud.removeAccess(b.getAttribute('data-e')).then(function () { toast('تم الإيقاف'); }); }
     else if (a === 'noop') { }
@@ -1262,7 +1324,7 @@
     var claude = window.claude;
     try { dbh = claude && await claude.use('db'); } catch (e) { dbh = null; }
     if (!dbh) { state.dbOk = false; render(); return; }
-    try { var u = await claude.use('user'); userNs = u; if (u) { state.isAdmin = !!(await u.canEdit()); state.myId = await u.id(); } } catch (e) { }
+    try { var u = await claude.use('user'); userNs = u; if (u) { state.isAdmin = !!(await u.canEdit()); state.isOwner = u.isOwner ? !!(await u.isOwner()) : state.isAdmin; state.myId = await u.id(); } } catch (e) { }
     state.roleKnown = true;
     dbh.doc('settings/main').onSnapshot(function (s) { state.settings = s.exists ? s.data() : null; state.loaded.settings = true; schedule(); }, function () { state.loaded.settings = true; schedule(); });
     COLLS.forEach(function (name) {
