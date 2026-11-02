@@ -495,8 +495,8 @@
         '<div><span class="muted">صرف من جيبه</span><span>' + N(p.direct) + '</span></div>' +
         '<div><span class="muted">موّل للصندوق</span><span>' + N(p.funded) + '</span></div>' +
         (p.fundedKwd > 0 ? '<div><span class="muted">ما يقابله بالدينار</span><span>' + fmtN(p.fundedKwd, 3) + ' د.ك</span></div>' : '') +
-        splitLines(c, p) + '</div>' + editBtn(p.name) + '</div>';
-    }).join('') + '</div><p class="small muted">ما يصرفه أي شريك من جيبه يُقسَّم على الباقين بحسب نسبهم. التفاصيل وطريقة التحويل في تبويب «التسوية».</p>';
+        '</div>' + editBtn(p.name) + '</div>';
+    }).join('') + '</div><div style="margin-top:12px">' + accountBox(c) + '</div><p class="small muted">التفاصيل وطريقة التحويل في تبويب «التسوية».</p>';
     h += receivedSection();
     h += salShares(c);
     h += '<h2>المنتجات</h2>';
@@ -519,6 +519,13 @@
       '<tr><th>الإجمالي</th><th>' + N(c.salTotal) + '</th><th>' + N(c.salDue) + '</th></tr></tbody></table></div>' +
       '<p class="small muted">المستحق هو الرواتب التي لم تُصرف بعد، موزّعة بنسب الشركاء. ما يُصرف منها يدخل في تسوية «له / عليه» عند تسجيله كمصروف بواسطة شريك.</p>';
     return h;
+  }
+  function accountBox(c) {
+    return '<div class="card"><b>الحساب بين الشركاء</b><div class="lines">' + c.p.map(function (p) {
+      var cls = p.diff > 0.005 ? 'good' : p.diff < -0.005 ? 'bad' : '';
+      var t = p.diff > 0.005 ? 'له ' + N(p.diff) : p.diff < -0.005 ? 'عليه ' + N(-p.diff) : 'متساوٍ';
+      return '<div><span>' + esc(p.name) + '</span><span class="' + cls + '"><b>' + t + '</b></span></div>';
+    }).join('') + '</div></div>';
   }
   function splitLines(c, p) {
     if (p.direct <= 0.005) return '';
@@ -548,12 +555,13 @@
       (equal ? '<div><span class="muted">÷ ' + c.p.length + ' شركاء</span><span></span></div>' : '') +
       '<div class="t"><span>' + (equal ? 'نصيب كل شريك' : 'النصيب بحسب النسب') + '</span><span>' + (equal ? N(c.totalPaid / c.p.length) : '') + '</span></div></div>' +
       '<p class="small muted" style="margin:8px 0 0">الفرق = ما دفعه الشريك − نصيبه. «له» يعني يستحق استرداد الفرق، و«عليه» يعني يدفع الفرق.</p></div>' +
+      '<div style="margin-top:12px">' + accountBox(c) + '</div>' +
       '<button class="btn ghost" style="margin-top:12px" data-a="share">إرسال تقرير للشركاء</button><h2>حساب كل شريك</h2><div class="stack">' + c.p.map(function (p) {
       return '<div class="card"><div class="prow"><span class="nm">' + esc(p.name) + '</span>' + pill(p.diff) + '</div><div class="lines">' +
         '<div><span class="muted">النسبة</span><span>' + N(p.ratio) + '%</span></div>' +
         '<div><span class="muted">مموّل للصندوق (' + esc(cur()) + ')</span><span>' + N(p.funded) + '</span></div>' +
         (p.fundedKwd > 0 ? '<div><span class="muted">ما يقابله بالدينار الكويتي</span><span>' + fmtN(p.fundedKwd, 3) + ' د.ك</span></div>' : '') +
-        '<div><span class="muted">دفعه من جيبه</span><span>' + N(p.direct) + '</span></div>' + splitLines(c, p) +
+        '<div><span class="muted">دفعه من جيبه</span><span>' + N(p.direct) + '</span></div>' +
         '<div class="t"><span>إجمالي ما دفعه</span><span>' + N(p.paid) + '</span></div>' +
         '<div><span class="muted">حصته المفروضة</span><span>' + N(p.share) + '</span></div>' +
         '<div class="t"><span>الفرق</span><span class="' + (p.diff > 0.005 ? 'good' : p.diff < -0.005 ? 'bad' : '') + '">' + N(p.diff) + '</span></div></div>' + editBtn(p.name) + '</div>';
