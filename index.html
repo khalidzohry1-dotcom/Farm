@@ -481,6 +481,8 @@
       { k: 'category', t: 'select', l: 'الفئة', opts: function () { return CATS; }, req: 1 },
       { k: 'desc', t: 'text', l: 'البيان' },
       { k: 'amount', t: 'money', l: 'المبلغ', req: 1 },
+      { k: 'kwd', t: 'money', l: 'المقابل بالدينار الكويتي (د.ك)', half: 1 },
+      { k: 'rate', t: 'money', l: 'سعر الصرف (جنيه لكل دينار)', half: 1 },
       { k: 'paidBy', t: 'select', l: 'مصدر الدفع', opts: payerOpts, req: 1 },
       { k: 'note', t: 'text', l: 'ملاحظات' }],
       title: function (d) { return d.desc || d.category; }, meta: function (d) { return [d.category, 'دفع: ' + (d.paidBy || FUND)]; },
@@ -494,6 +496,8 @@
       { k: 'unit', t: 'select', l: 'الوحدة', opts: function () { return UNITS; }, half: 1 },
       { k: 'price', t: 'money', l: 'سعر الوحدة', req: 1 },
       { k: 'paid', t: 'money', l: 'المدفوع للمورد' },
+      { k: 'kwd', t: 'money', l: 'المقابل بالدينار الكويتي (د.ك)', half: 1 },
+      { k: 'rate', t: 'money', l: 'سعر الصرف (جنيه لكل دينار)', half: 1 },
       { k: 'paidBy', t: 'select', l: 'مصدر الدفع', opts: payerOpts },
       { k: 'note', t: 'text', l: 'ملاحظات' }],
       calc: function (d) { var t = num(d.qty) * num(d.price); return [['الإجمالي', t], ['المتبقي للمورد', t - num(d.paid)]]; },
@@ -538,6 +542,8 @@
       { k: 'base', t: 'money', l: 'الراتب الأساسي', req: 1 },
       { k: 'allow', t: 'money', l: 'بدلات / مكافآت', half: 1 },
       { k: 'ded', t: 'money', l: 'خصومات / سلف', half: 1 },
+      { k: 'kwd', t: 'money', l: 'المقابل بالدينار الكويتي (د.ك)', half: 1 },
+      { k: 'rate', t: 'money', l: 'سعر الصرف (جنيه لكل دينار)', half: 1 },
       { k: 'paid', t: 'select', l: 'تم الصرف؟', opts: function () { return ['yes|نعم', 'no|لا']; }, req: 1 },
       { k: 'paidBy', t: 'select', l: 'مصدر الصرف', opts: payerOpts },
       { k: 'note', t: 'text', l: 'ملاحظات' }],
@@ -549,6 +555,8 @@
       { k: 'kind', t: 'select', l: 'النوع', opts: function () { return ['onfarm|دين على المزرعة', 'tofarm|مستحق لدى الغير']; }, req: 1 },
       { k: 'party', t: 'text', l: 'الجهة / الاسم', req: 1 },
       { k: 'amount', t: 'money', l: 'المبلغ', req: 1 },
+      { k: 'kwd', t: 'money', l: 'المقابل بالدينار الكويتي (د.ك)', half: 1 },
+      { k: 'rate', t: 'money', l: 'سعر الصرف (جنيه لكل دينار)', half: 1 },
       { k: 'status', t: 'select', l: 'الحالة', opts: function () { return ['unpaid|غير مدفوع', 'paid|مدفوع']; }, req: 1 },
       { k: 'paidDate', t: 'date', l: 'تاريخ السداد / التحصيل' },
       { k: 'paidBy', t: 'select', l: 'مصدر السداد (للديون على المزرعة)', opts: payerOpts },
@@ -594,7 +602,11 @@
         sum(dOn, function (x) { return x.status === 'paid' && x.paidBy === p.name ? num(x.amount) : 0; });
       tot += funded + direct;
       var fk = sum(S.funding, function (x) { return x.partner === p.name ? num(x.kwd) : 0; });
-      return { name: p.name, ratio: num(p.ratio), funded: funded, fundedKwd: fk, direct: direct, paid: funded + direct };
+      var dk = sum(S.expenses, function (x) { return x.paidBy === p.name ? num(x.kwd) : 0; }) +
+        sum(S.incoming, function (x) { return x.paidBy === p.name ? num(x.kwd) : 0; }) +
+        sum(S.payroll, function (x) { return x.paid === 'yes' && x.paidBy === p.name ? num(x.kwd) : 0; }) +
+        sum(dOn, function (x) { return x.status === 'paid' && x.paidBy === p.name ? num(x.kwd) : 0; });
+      return { name: p.name, ratio: num(p.ratio), funded: funded, fundedKwd: fk, direct: direct, directKwd: dk, paid: funded + direct };
     });
     c.totalPaid = tot;
     c.p.forEach(function (p) { p.share = tot * p.ratio / 100; p.diff = p.paid - p.share; p.profit = c.net * p.ratio / 100; p.salShare = c.salTotal * p.ratio / 100; p.salDueShare = c.salDue * p.ratio / 100; });
@@ -684,7 +696,7 @@
       '</div>';
     h += '<button class="btn ghost" style="margin-top:12px" data-a="share">إرسال تقرير للشركاء</button><h2>الشركاء</h2><div class="stack">' + c.p.map(function (p) {
       return '<div class="card"><div class="prow"><span class="nm">' + esc(p.name) + '</span>' + pill(p.diff) + '</div><div class="lines">' +
-        '<div><span class="muted">صرف من جيبه</span><span>' + N(p.direct) + '</span></div>' + kwdLine(p.direct) +
+        '<div><span class="muted">صرف من جيبه</span><span>' + N(p.direct) + '</span></div>' + kwdLine(p) +
         '<div><span class="muted">موّل للصندوق</span><span>' + N(p.funded) + '</span></div>' +
         (p.fundedKwd > 0 ? '<div><span class="muted">ما يقابله بالدينار</span><span>' + fmtN(p.fundedKwd, 3) + ' د.ك</span></div>' : '') +
         '<div class="t"><span>إجمالي ما دفعه</span><span>' + N(p.paid) + '</span></div>' +
@@ -754,7 +766,7 @@
         '<div><span class="muted">النسبة</span><span>' + N(p.ratio) + '%</span></div>' +
         '<div><span class="muted">مموّل للصندوق (' + esc(cur()) + ')</span><span>' + N(p.funded) + '</span></div>' +
         (p.fundedKwd > 0 ? '<div><span class="muted">ما يقابله بالدينار الكويتي</span><span>' + fmtN(p.fundedKwd, 3) + ' د.ك</span></div>' : '') +
-        '<div><span class="muted">دفعه من جيبه</span><span>' + N(p.direct) + '</span></div>' + kwdLine(p.direct) +
+        '<div><span class="muted">دفعه من جيبه</span><span>' + N(p.direct) + '</span></div>' + kwdLine(p) +
         '<div class="t"><span>إجمالي ما دفعه</span><span>' + N(p.paid) + '</span></div>' +
         '<div><span class="muted">حصته المفروضة</span><span>' + N(p.share) + '</span></div>' +
         '<div class="t"><span>الفرق</span><span class="' + (p.diff > 0.005 ? 'good' : p.diff < -0.005 ? 'bad' : '') + '">' + N(p.diff) + '</span></div></div>' + editBtn(p.name) + '</div>';
@@ -953,10 +965,9 @@
     else inner = '<input id="' + id + '" type="text" autocomplete="off" value="' + esc(v) + '">';
     return '<div class="field"><label for="' + id + '">' + f.l + (f.req ? ' *' : '') + '</label>' + inner + '</div>';
   }
-  function kwdLine(egp) {
-    var r = num(state.settings && state.settings.todayRate);
-    if (!(r > 0) || !(egp > 0)) return '';
-    return '<div><span class="muted">ما يقابله بالدينار (بسعر اليوم)</span><span>' + fmtN(egp / r, 3) + ' د.ك</span></div>';
+  function kwdLine(p) {
+    if (!(p.directKwd > 0)) return '';
+    return '<div><span class="muted">ما يقابله بالدينار</span><span>' + fmtN(p.directKwd, 3) + ' د.ك</span></div>';
   }
   function debtsSection(c) {
     var h = '<h2>المديونيات</h2>';
@@ -1258,6 +1269,10 @@
     if (cur_edit.type === 'funding' && ev && ev.target && (ev.target.id === 'f_kwd' || ev.target.id === 'f_rate')) {
       var kw = num($('f_kwd').value), rt = num($('f_rate').value);
       if (kw > 0 && rt > 0) $('f_amount').value = String(Math.round(kw * rt * 100) / 100);
+    } else if (ev && ev.target && ['expenses', 'incoming', 'payroll', 'debts'].indexOf(cur_edit.type) >= 0 && ['f_amount', 'f_paid', 'f_base', 'f_allow', 'f_ded', 'f_rate', 'f_kwd'].indexOf(ev.target.id) >= 0) {
+      var ty = cur_edit.type, fd = readForm(ty), bs = ty === 'payroll' ? netOf(fd) : ty === 'incoming' ? num(fd.paid) : num(fd.amount);
+      if (ev.target.id === 'f_kwd') { if (num(fd.kwd) > 0 && bs > 0) $('f_rate').value = String(Math.round(bs / num(fd.kwd) * 10000) / 10000); }
+      else if (num(fd.rate) > 0 && bs > 0) $('f_kwd').value = String(Math.round(bs / num(fd.rate) * 1000) / 1000);
     } var T = TYPES[cur_edit.type], box = $('calc'); if (!box) return;
     if (!T.calc) { box.innerHTML = ''; return; }
     box.innerHTML = T.calc(readForm(cur_edit.type)).map(function (r) { return '<div class="calc"><span>' + r[0] + '</span><span>' + N(r[1]) + ' ' + esc(cur()) + '</span></div>'; }).join('<div style="height:8px"></div>');
