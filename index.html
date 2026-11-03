@@ -609,6 +609,17 @@
       return { name: p.name, ratio: num(p.ratio), funded: funded, fundedKwd: fk, direct: direct, directKwd: dk, paid: funded + direct };
     });
     c.totalPaid = tot;
+    c.totalPaidKwd = sum(c.p, function (p) { return p.fundedKwd + p.directKwd; });
+    c.gaps = 0;
+    c.p.forEach(function (p) {
+      p.paidKwd = p.fundedKwd + p.directKwd; p.shareKwd = c.totalPaidKwd * p.ratio / 100; p.diffKwd = p.paidKwd - p.shareKwd;
+      var nm = p.name;
+      c.gaps += S.funding.filter(function (x) { return x.partner === nm && num(x.amount) > 0 && !(num(x.kwd) > 0); }).length +
+        S.expenses.filter(function (x) { return x.paidBy === nm && num(x.amount) > 0 && !(num(x.kwd) > 0); }).length +
+        S.incoming.filter(function (x) { return x.paidBy === nm && num(x.paid) > 0 && !(num(x.kwd) > 0); }).length +
+        S.payroll.filter(function (x) { return x.paid === 'yes' && x.paidBy === nm && netOf(x) > 0 && !(num(x.kwd) > 0); }).length +
+        dOn.filter(function (x) { return x.status === 'paid' && x.paidBy === nm && num(x.amount) > 0 && !(num(x.kwd) > 0); }).length;
+    });
     c.p.forEach(function (p) { p.share = tot * p.ratio / 100; p.diff = p.paid - p.share; p.profit = c.net * p.ratio / 100; p.salShare = c.salTotal * p.ratio / 100; p.salDueShare = c.salDue * p.ratio / 100; });
     c.directAll = sum(c.p, function (p) { return p.direct; });
     c.fundCosts = c.paidCosts - c.directAll;
@@ -699,7 +710,8 @@
         '<div><span class="muted">صرف من جيبه</span><span>' + N(p.direct) + '</span></div>' + kwdLine(p) +
         '<div><span class="muted">موّل للصندوق</span><span>' + N(p.funded) + '</span></div>' +
         (p.fundedKwd > 0 ? '<div><span class="muted">ما يقابله بالدينار</span><span>' + fmtN(p.fundedKwd, 3) + ' د.ك</span></div>' : '') +
-        '<div class="t"><span>إجمالي ما دفعه</span><span>' + N(p.paid) + '</span></div>' +
+        '<div class="t"><span>إجمالي ما دفعه (' + esc(cur()) + ')</span><span>' + N(p.paid) + '</span></div>' +
+        kwRow('إجمالي ما دفعه (د.ك)', p.paidKwd, '', 1) +
         '</div>' + editBtn(p.name) + '</div>';
     }).join('') + '</div><div style="margin-top:12px">' + accountBox(c) + '</div><p class="small muted">التفاصيل وطريقة التحويل في تبويب «التسوية».</p>';
     h += receivedSection();
@@ -725,12 +737,16 @@
       '<p class="small muted">المستحق هو الرواتب التي لم تُصرف بعد، موزّعة بنسب الشركاء. ما يُصرف منها يدخل في تسوية «له / عليه» عند تسجيله كمصروف بواسطة شريك.</p>';
     return h;
   }
+  function kw(v) { return fmtN(Math.abs(v), 3) + ' د.ك'; }
+  function kwRow(label, v, cls, t) { return '<div' + (t ? ' class="t"' : '') + '><span' + (t ? '' : ' class="muted"') + '>' + label + '</span><span' + (cls ? ' class="' + cls + '"' : '') + '>' + kw(v) + '</span></div>'; }
+  function gapsNote(c) { return c.gaps > 0 ? '<p class="small muted">يوجد ' + c.gaps + ' دفعة مسجّلة بلا مقابل بالدينار، فلا تدخل في أرقام الدينار. افتحها وأضف سعر الصرف.</p>' : ''; }
   function accountBox(c) {
     return '<div class="card"><b>الحساب بين الشركاء</b><div class="lines">' + c.p.map(function (p) {
       var cls = p.diff > 0.005 ? 'good' : p.diff < -0.005 ? 'bad' : '';
       var t = p.diff > 0.005 ? 'له ' + N(p.diff) : p.diff < -0.005 ? 'عليه ' + N(-p.diff) : 'متساوٍ';
-      return '<div><span>' + esc(p.name) + '</span><span class="' + cls + '"><b>' + t + '</b></span></div>';
-    }).join('') + '</div></div>';
+      var tk = Math.abs(p.diffKwd) > 0.0005 ? '<div class="small muted" style="font-weight:400">' + (p.diffKwd > 0 ? 'له ' : 'عليه ') + kw(p.diffKwd) + '</div>' : '';
+      return '<div><span>' + esc(p.name) + '</span><span class="' + cls + '"><b>' + t + '</b>' + tk + '</span></div>';
+    }).join('') + '</div>' + gapsNote(c) + '</div>';
   }
   function splitLines(c, p) {
     if (p.direct <= 0.005) return '';
@@ -767,9 +783,12 @@
         '<div><span class="muted">مموّل للصندوق (' + esc(cur()) + ')</span><span>' + N(p.funded) + '</span></div>' +
         (p.fundedKwd > 0 ? '<div><span class="muted">ما يقابله بالدينار الكويتي</span><span>' + fmtN(p.fundedKwd, 3) + ' د.ك</span></div>' : '') +
         '<div><span class="muted">دفعه من جيبه</span><span>' + N(p.direct) + '</span></div>' + kwdLine(p) +
-        '<div class="t"><span>إجمالي ما دفعه</span><span>' + N(p.paid) + '</span></div>' +
-        '<div><span class="muted">حصته المفروضة</span><span>' + N(p.share) + '</span></div>' +
-        '<div class="t"><span>الفرق</span><span class="' + (p.diff > 0.005 ? 'good' : p.diff < -0.005 ? 'bad' : '') + '">' + N(p.diff) + '</span></div></div>' + editBtn(p.name) + '</div>';
+        '<div class="t"><span>إجمالي ما دفعه (' + esc(cur()) + ')</span><span>' + N(p.paid) + '</span></div>' +
+        kwRow('إجمالي ما دفعه (د.ك)', p.paidKwd, '', 1) +
+        '<div><span class="muted">حصته المفروضة (' + esc(cur()) + ')</span><span>' + N(p.share) + '</span></div>' +
+        kwRow('حصته المفروضة (د.ك)', p.shareKwd) +
+        '<div class="t"><span>' + (p.diff > 0.005 ? 'له' : p.diff < -0.005 ? 'عليه' : 'الفرق') + ' (' + esc(cur()) + ')</span><span class="' + (p.diff > 0.005 ? 'good' : p.diff < -0.005 ? 'bad' : '') + '">' + N(p.diff) + '</span></div>' +
+        kwRow((p.diffKwd > 0.0005 ? 'له' : p.diffKwd < -0.0005 ? 'عليه' : 'الفرق') + ' (د.ك)', p.diffKwd, p.diffKwd > 0.0005 ? 'good' : p.diffKwd < -0.0005 ? 'bad' : '', 1) + '</div>' + editBtn(p.name) + '</div>';
     }).join('') + '</div>';
     h += '<h2>التحويلات المقترحة</h2>';
     var tr = num(state.settings.todayRate);
