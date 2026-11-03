@@ -670,6 +670,7 @@
         '<div><span class="muted">صرف من جيبه</span><span>' + N(p.direct) + '</span></div>' +
         '<div><span class="muted">موّل للصندوق</span><span>' + N(p.funded) + '</span></div>' +
         (p.fundedKwd > 0 ? '<div><span class="muted">ما يقابله بالدينار</span><span>' + fmtN(p.fundedKwd, 3) + ' د.ك</span></div>' : '') +
+        '<div class="t"><span>إجمالي ما دفعه</span><span>' + N(p.paid) + '</span></div>' +
         '</div>' + editBtn(p.name) + '</div>';
     }).join('') + '</div><div style="margin-top:12px">' + accountBox(c) + '</div><p class="small muted">التفاصيل وطريقة التحويل في تبويب «التسوية».</p>';
     h += receivedSection();
