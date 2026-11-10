@@ -1170,7 +1170,7 @@
   }
   function openActivity() {
     var list = visibleActs().slice(0, 60), me = window.__farmCloud.myEmail(), t = seenAt();
-    var h = sheetTop('الإشعارات') + (list.length ? '<button class="paybtn" style="margin-bottom:12px;background:var(--bad-soft);color:var(--bad);border-color:var(--bad)" data-a="actclear">مسح كل الإشعارات</button>' : '');
+    var h = sheetTop('الإشعارات') + '';
     h += list.length ? '<div class="stack">' + list.map(function (a) {
       var fresh = a.email !== me && a.at > t;
       return '<div class="card" style="' + (fresh ? 'border-color:var(--accent)' : '') + '"><div>' + esc(describeAct(a)) + '</div><div class="small muted" style="margin-top:4px">' + esc(whenText(a.at)) + (a.email === me ? ' · أنت' : '') + '</div><button class="paybtn" style="margin-top:8px;width:auto;padding:0 14px;min-height:36px" data-a="actdel" data-id="' + esc(a.id) + '">حذف</button></div>';
