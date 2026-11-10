@@ -466,7 +466,7 @@
   // ---------- data types ----------
   function payerOpts() { return [FUND_F + '|من التمويل', FUND_P + '|من الناتج (المبيعات)'].concat(partnerNames().map(function (n) { return n + '|من جيب ' + n; })); }
   var TYPES = {
-    funding: { label: 'تمويل', hint: 'مبلغ مستلم من شريك (دينار أو جنيه)', fields: [
+    funding: { label: 'تمويل', hint: 'أي مبلغ يدفعه شريك للمزرعة (يُقسَّم على الشركاء)', fields: [
       { k: 'date', t: 'date', l: 'تاريخ الاستلام', req: 1 },
       { k: 'partner', t: 'select', l: 'الشريك', opts: partnerNames, req: 1 },
       { k: 'kwd', t: 'money', l: 'المبلغ بالدينار الكويتي (د.ك)', half: 1 },
@@ -481,11 +481,8 @@
       { k: 'category', t: 'select', l: 'الفئة', opts: function () { return CATS; }, req: 1 },
       { k: 'desc', t: 'text', l: 'البيان' },
       { k: 'amount', t: 'money', l: 'المبلغ', req: 1 },
-      { k: 'kwd', t: 'money', l: 'المقابل بالدينار الكويتي (د.ك)', half: 1 },
-      { k: 'rate', t: 'money', l: 'سعر الصرف (جنيه لكل دينار)', half: 1 },
-      { k: 'paidBy', t: 'select', l: 'مصدر الدفع', opts: payerOpts, req: 1 },
       { k: 'note', t: 'text', l: 'ملاحظات' }],
-      title: function (d) { return d.desc || d.category; }, meta: function (d) { return [d.category, 'دفع: ' + (d.paidBy || FUND)]; },
+      title: function (d) { return d.desc || d.category; }, meta: function (d) { return [d.category]; },
       val: function (d) { return { v: num(d.amount), cur: 1 }; } },
     incoming: { label: 'وارد', hint: 'بذور، أسمدة، أعلاف، مستلزمات', fields: [
       { k: 'date', t: 'date', l: 'التاريخ', req: 1 },
@@ -496,9 +493,6 @@
       { k: 'unit', t: 'select', l: 'الوحدة', opts: function () { return UNITS; }, half: 1 },
       { k: 'price', t: 'money', l: 'سعر الوحدة', req: 1 },
       { k: 'paid', t: 'money', l: 'المدفوع للمورد' },
-      { k: 'kwd', t: 'money', l: 'المقابل بالدينار الكويتي (د.ك)', half: 1 },
-      { k: 'rate', t: 'money', l: 'سعر الصرف (جنيه لكل دينار)', half: 1 },
-      { k: 'paidBy', t: 'select', l: 'مصدر الدفع', opts: payerOpts },
       { k: 'note', t: 'text', l: 'ملاحظات' }],
       calc: function (d) { var t = num(d.qty) * num(d.price); return [['الإجمالي', t], ['المتبقي للمورد', t - num(d.paid)]]; },
       title: function (d) { return d.item; }, meta: function (d) { return [d.category, d.supplier, d.qty ? fmt(num(d.qty)) + ' ' + (d.unit || '') : '']; },
@@ -542,24 +536,18 @@
       { k: 'base', t: 'money', l: 'الراتب الأساسي', req: 1 },
       { k: 'allow', t: 'money', l: 'بدلات / مكافآت', half: 1 },
       { k: 'ded', t: 'money', l: 'خصومات / سلف', half: 1 },
-      { k: 'kwd', t: 'money', l: 'المقابل بالدينار الكويتي (د.ك)', half: 1 },
-      { k: 'rate', t: 'money', l: 'سعر الصرف (جنيه لكل دينار)', half: 1 },
       { k: 'paid', t: 'select', l: 'تم الصرف؟', opts: function () { return ['yes|نعم', 'no|لا']; }, req: 1 },
-      { k: 'paidBy', t: 'select', l: 'مصدر الصرف', opts: payerOpts },
       { k: 'note', t: 'text', l: 'ملاحظات' }],
       calc: function (d) { return [['الصافي', netOf(d)]]; },
-      title: function (d) { return d.worker; }, meta: function (d) { return [d.job, d.paid === 'yes' ? 'مصروف' + (d.paidDate ? ' ' + d.paidDate : '') + (d.paidBy ? ' بواسطة ' + d.paidBy : '') : 'لم يُصرف']; },
+      title: function (d) { return d.worker; }, meta: function (d) { return [d.job, d.paid === 'yes' ? 'مصروف' + (d.paidDate ? ' ' + d.paidDate : '') : 'لم يُصرف']; },
       val: function (d) { return { v: netOf(d), cur: 1, cls: d.paid === 'yes' ? 'good' : '', sub: d.paid === 'yes' ? 'تم الصرف' : 'لم يُصرف' }; } },
     debts: { label: 'مديونية', hint: 'ديون على المزرعة ومستحقات لدى الغير', fields: [
       { k: 'date', t: 'date', l: 'التاريخ', req: 1 },
       { k: 'kind', t: 'select', l: 'النوع', opts: function () { return ['onfarm|دين على المزرعة', 'tofarm|مستحق لدى الغير']; }, req: 1 },
       { k: 'party', t: 'text', l: 'الجهة / الاسم', req: 1 },
       { k: 'amount', t: 'money', l: 'المبلغ', req: 1 },
-      { k: 'kwd', t: 'money', l: 'المقابل بالدينار الكويتي (د.ك)', half: 1 },
-      { k: 'rate', t: 'money', l: 'سعر الصرف (جنيه لكل دينار)', half: 1 },
       { k: 'status', t: 'select', l: 'الحالة', opts: function () { return ['unpaid|غير مدفوع', 'paid|مدفوع']; }, req: 1 },
       { k: 'paidDate', t: 'date', l: 'تاريخ السداد / التحصيل' },
-      { k: 'paidBy', t: 'select', l: 'مصدر السداد (للديون على المزرعة)', opts: payerOpts },
       { k: 'note', t: 'text', l: 'ملاحظات' }],
       title: function (d) { return d.party; }, meta: function (d) { return [d.kind === 'tofarm' ? 'مستحق لدى الغير' : 'دين على المزرعة', d.status === 'paid' ? 'مدفوع' + (d.paidDate ? ' ' + d.paidDate : '') : 'غير مدفوع', d.note]; },
       val: function (d) { return { v: num(d.amount), cur: 1, cls: d.status === 'paid' ? 'good' : 'bad', sub: d.status === 'paid' ? (d.kind === 'tofarm' ? 'تم التحصيل' : 'تم السداد') : 'غير مدفوع' }; } }
@@ -596,37 +584,30 @@
     var ps = partners(), tot = 0;
     c.p = ps.map(function (p) {
       var funded = sum(S.funding, function (x) { return x.partner === p.name ? num(x.amount) : 0; });
-      var direct = sum(S.expenses, function (x) { return x.paidBy === p.name ? num(x.amount) : 0; }) +
-        sum(S.incoming, function (x) { return x.paidBy === p.name ? num(x.paid) : 0; }) +
-        sum(S.payroll, function (x) { return x.paid === 'yes' && x.paidBy === p.name ? netOf(x) : 0; }) +
-        sum(dOn, function (x) { return x.status === 'paid' && x.paidBy === p.name ? num(x.amount) : 0; });
-      tot += funded + direct;
       var fk = sum(S.funding, function (x) { return x.partner === p.name ? num(x.kwd) : 0; });
-      var dk = sum(S.expenses, function (x) { return x.paidBy === p.name ? num(x.kwd) : 0; }) +
-        sum(S.incoming, function (x) { return x.paidBy === p.name ? num(x.kwd) : 0; }) +
-        sum(S.payroll, function (x) { return x.paid === 'yes' && x.paidBy === p.name ? num(x.kwd) : 0; }) +
-        sum(dOn, function (x) { return x.status === 'paid' && x.paidBy === p.name ? num(x.kwd) : 0; });
-      return { name: p.name, ratio: num(p.ratio), funded: funded, fundedKwd: fk, direct: direct, directKwd: dk, paid: funded + direct };
+      tot += funded;
+      return { name: p.name, ratio: num(p.ratio), funded: funded, fundedKwd: fk, direct: 0, directKwd: 0, paid: funded, paidKwd: fk };
     });
     c.totalPaid = tot;
-    c.totalPaidKwd = sum(c.p, function (p) { return p.fundedKwd + p.directKwd; });
-    c.gaps = 0;
+    c.totalPaidKwd = sum(c.p, function (p) { return p.fundedKwd; });
+    c.gaps = S.funding.filter(function (x) { return num(x.amount) > 0 && !(num(x.kwd) > 0); }).length;
     c.p.forEach(function (p) {
-      p.paidKwd = p.fundedKwd + p.directKwd; p.shareKwd = c.totalPaidKwd * p.ratio / 100; p.diffKwd = p.paidKwd - p.shareKwd;
-      var nm = p.name;
-      c.gaps += S.funding.filter(function (x) { return x.partner === nm && num(x.amount) > 0 && !(num(x.kwd) > 0); }).length +
-        S.expenses.filter(function (x) { return x.paidBy === nm && num(x.amount) > 0 && !(num(x.kwd) > 0); }).length +
-        S.incoming.filter(function (x) { return x.paidBy === nm && num(x.paid) > 0 && !(num(x.kwd) > 0); }).length +
-        S.payroll.filter(function (x) { return x.paid === 'yes' && x.paidBy === nm && netOf(x) > 0 && !(num(x.kwd) > 0); }).length +
-        dOn.filter(function (x) { return x.status === 'paid' && x.paidBy === nm && num(x.amount) > 0 && !(num(x.kwd) > 0); }).length;
+      p.shareKwd = c.totalPaidKwd * p.ratio / 100; p.diffKwd = p.paidKwd - p.shareKwd;
+      p.share = tot * p.ratio / 100; p.diff = p.paid - p.share; p.profit = c.net * p.ratio / 100; p.salShare = c.salTotal * p.ratio / 100; p.salDueShare = c.salDue * p.ratio / 100;
+      p.owedToMe = []; p.iOwe = [];
     });
-    c.p.forEach(function (p) { p.share = tot * p.ratio / 100; p.diff = p.paid - p.share; p.profit = c.net * p.ratio / 100; p.salShare = c.salTotal * p.ratio / 100; p.salDueShare = c.salDue * p.ratio / 100; });
-    c.directAll = sum(c.p, function (p) { return p.direct; });
-    c.fundCosts = c.paidCosts - c.directAll;
-    c.fromProceeds = sum(S.expenses, function (x) { return x.paidBy === FUND_P ? num(x.amount) : 0; }) + sum(S.incoming, function (x) { return x.paidBy === FUND_P ? num(x.paid) : 0; }) + sum(S.payroll, function (x) { return x.paid === 'yes' && x.paidBy === FUND_P ? netOf(x) : 0; }) + sum(dOn, function (x) { return x.status === 'paid' && x.paidBy === FUND_P ? num(x.amount) : 0; });
-    c.fromFunding = c.fundCosts - c.fromProceeds;
-    c.fundBal = c.funding + c.debtIn - c.fromFunding;
-    c.procBal = c.collected - c.fromProceeds;
+    c.pairs = [];
+    c.p.forEach(function (P) {
+      c.p.forEach(function (Q) {
+        if (P === Q) return;
+        var g = P.funded * Q.ratio / 100 - Q.funded * P.ratio / 100, gk = P.fundedKwd * Q.ratio / 100 - Q.fundedKwd * P.ratio / 100;
+        if (g > 0.005) { var t = { cred: P.name, debt: Q.name, egp: g, kwd: gk }; c.pairs.push(t); P.owedToMe.push(t); Q.iOwe.push(t); }
+      });
+    });
+    c.directAll = 0;
+    c.fundCosts = c.paidCosts;
+    c.fromProceeds = 0; c.fromFunding = c.fundCosts;
+    c.fundBal = c.funding + c.debtIn - c.fundCosts; c.procBal = c.collected;
     c.cash = c.funding + c.debtIn + c.collected - c.fundCosts;
     // products
     var names = {};
@@ -695,7 +676,7 @@
   function viewHome(c) {
     if (!state.settings) return state.loaded.settings ? viewSetupNeeded() : '<div class="empty">جارٍ التحميل…</div>';
     var h = reqBanner() + backupReminder() + activityBanner() + '<div class="hero"><div class="lbl">رصيد صندوق المزرعة الآن</div><div class="big">' + N(c.cash) + '<small>' + esc(cur()) + '</small></div>' +
-      '<div class="row"><span>المتبقي من التمويل <b>' + N(c.fundBal) + '</b></span><span>المتبقي من الناتج <b>' + N(c.procBal) + '</b></span></div></div>';
+      '<div class="row"><span>إجمالي التمويل <b>' + N(c.funding) + '</b></span><span>المحصّل من المبيعات <b>' + N(c.collected) + '</b></span></div></div>';
     if (totalRecords() === 0) h += '<div class="note" style="margin-top:12px">لا توجد سجلات بعد. اضغط زر <b>+</b> وابدأ بتسجيل تمويل كل شريك.</div>';
     h += '<div class="grid">' +
       kpi('التكاليف (بدون الرواتب)', N(c.costs)) +
@@ -707,12 +688,9 @@
       '</div>';
     h += '<button class="btn ghost" style="margin-top:12px" data-a="share">إرسال تقرير للشركاء</button><h2>الشركاء</h2><div class="stack">' + c.p.map(function (p) {
       return '<div class="card"><div class="prow"><span class="nm">' + esc(p.name) + '</span>' + pill(p.diff) + '</div><div class="lines">' +
-        '<div><span class="muted">صرف من جيبه</span><span>' + N(p.direct) + '</span></div>' + kwdLine(p) +
-        '<div><span class="muted">موّل للصندوق</span><span>' + N(p.funded) + '</span></div>' +
-        (p.fundedKwd > 0 ? '<div><span class="muted">ما يقابله بالدينار</span><span>' + fmtN(p.fundedKwd, 3) + ' د.ك</span></div>' : '') +
-        '<div class="t"><span>إجمالي ما دفعه (' + esc(cur()) + ')</span><span>' + N(p.paid) + '</span></div>' +
-        kwRow('إجمالي ما دفعه (د.ك)', p.paidKwd, '', 1) +
-        '</div>' + editBtn(p.name) + '</div>';
+        '<div><span class="muted">موّل للصندوق (' + esc(cur()) + ')</span><span>' + N(p.funded) + '</span></div>' +
+        kwRow('موّل للصندوق (د.ك)', p.fundedKwd) +
+        pairLines(p) + '</div></div>';
     }).join('') + '</div><div style="margin-top:12px">' + accountBox(c) + '</div><p class="small muted">التفاصيل وطريقة التحويل في تبويب «التسوية».</p>';
     h += receivedSection();
     h += debtsSection(c);
@@ -739,7 +717,12 @@
   }
   function kw(v) { return fmtN(Math.abs(v), 3) + ' د.ك'; }
   function kwRow(label, v, cls, t) { return '<div' + (t ? ' class="t"' : '') + '><span' + (t ? '' : ' class="muted"') + '>' + label + '</span><span' + (cls ? ' class="' + cls + '"' : '') + '>' + kw(v) + '</span></div>'; }
-  function gapsNote(c) { return c.gaps > 0 ? '<p class="small muted">يوجد ' + c.gaps + ' دفعة مسجّلة بلا مقابل بالدينار، فلا تدخل في أرقام الدينار. افتحها وأضف سعر الصرف.</p>' : ''; }
+  function gapsNote(c) { return c.gaps > 0 ? '<p class="small muted">يوجد ' + c.gaps + ' تمويل مسجّل بلا مقابل بالدينار، فلا يدخل في أرقام الدينار. افتحه وأضف المبلغ بالدينار وسعر الصرف.</p>' : ''; }
+  function pairVal(t) { return N(t.egp) + (t.kwd > 0.0005 ? ' <span class="small muted">· ' + fmtN(t.kwd, 3) + ' د.ك</span>' : ''); }
+  function pairLines(p) {
+    return p.owedToMe.map(function (t) { return '<div><span class="muted">له عند ' + esc(t.debt) + '</span><span class="good">' + pairVal(t) + '</span></div>'; }).join('') +
+      p.iOwe.map(function (t) { return '<div><span class="muted">عليه لـ ' + esc(t.cred) + '</span><span class="bad">' + pairVal(t) + '</span></div>'; }).join('');
+  }
   function accountBox(c) {
     return '<div class="card"><b>الحساب بين الشركاء</b><div class="lines">' + c.p.map(function (p) {
       var cls = p.diff > 0.005 ? 'good' : p.diff < -0.005 ? 'bad' : '';
@@ -769,10 +752,10 @@
   function viewSettle(c) {
     if (!state.settings) return viewSetupNeeded();
     var sumRatio = sum(c.p, function (p) { return p.ratio; });
-    var h = '<div class="note">كل شريك يتحمّل نسبته من إجمالي ما دُفع في المزرعة. ما دفعه الشريك = تمويله للصندوق + ما دفعه من جيبه للمصاريف والمشتريات والرواتب.</div>';
+    var h = '<div class="note">أي مبلغ يدفعه شريك يُسجَّل تمويلًا للصندوق، ويُقسَّم على الشركاء بنسبهم، فيصبح على كل شريك دين للشريك الذي موّل. والصرف كله من الصندوق.</div>';
     if (Math.abs(sumRatio - 100) > 0.01) h += '<div class="note" style="margin-top:10px;background:var(--bad-soft);color:var(--bad)">مجموع النسب ' + fmt(sumRatio) + '% وليس 100%. صحّحها من الإعدادات.</div>';
     var equal = c.p.length > 0 && c.p.every(function (q) { return Math.abs(q.ratio - c.p[0].ratio) < 0.01; });
-    h += '<div class="card" style="margin-top:12px"><div class="lines" style="margin-top:0"><div><span class="muted">إجمالي ما دفعه الشركاء</span><span>' + N(c.totalPaid) + ' ' + esc(cur()) + '</span></div>' +
+    h += '<div class="card" style="margin-top:12px"><div class="lines" style="margin-top:0"><div><span class="muted">إجمالي ما موّله الشركاء</span><span>' + N(c.totalPaid) + ' ' + esc(cur()) + '</span></div>' +
       (equal ? '<div><span class="muted">÷ ' + c.p.length + ' شركاء</span><span></span></div>' : '') +
       '<div class="t"><span>' + (equal ? 'نصيب كل شريك' : 'النصيب بحسب النسب') + '</span><span>' + (equal ? N(c.totalPaid / c.p.length) : '') + '</span></div></div>' +
       '<p class="small muted" style="margin:8px 0 0">الفرق = ما دفعه الشريك − نصيبه. «له» يعني يستحق استرداد الفرق، و«عليه» يعني يدفع الفرق.</p></div>' +
@@ -780,15 +763,13 @@
       '<button class="btn ghost" style="margin-top:12px" data-a="share">إرسال تقرير للشركاء</button><h2>حساب كل شريك</h2><div class="stack">' + c.p.map(function (p) {
       return '<div class="card"><div class="prow"><span class="nm">' + esc(p.name) + '</span>' + pill(p.diff) + '</div><div class="lines">' +
         '<div><span class="muted">النسبة</span><span>' + N(p.ratio) + '%</span></div>' +
-        '<div><span class="muted">مموّل للصندوق (' + esc(cur()) + ')</span><span>' + N(p.funded) + '</span></div>' +
-        (p.fundedKwd > 0 ? '<div><span class="muted">ما يقابله بالدينار الكويتي</span><span>' + fmtN(p.fundedKwd, 3) + ' د.ك</span></div>' : '') +
-        '<div><span class="muted">دفعه من جيبه</span><span>' + N(p.direct) + '</span></div>' + kwdLine(p) +
-        '<div class="t"><span>إجمالي ما دفعه (' + esc(cur()) + ')</span><span>' + N(p.paid) + '</span></div>' +
-        kwRow('إجمالي ما دفعه (د.ك)', p.paidKwd, '', 1) +
-        '<div><span class="muted">حصته المفروضة (' + esc(cur()) + ')</span><span>' + N(p.share) + '</span></div>' +
-        kwRow('حصته المفروضة (د.ك)', p.shareKwd) +
+        '<div class="t"><span>موّل للصندوق (' + esc(cur()) + ')</span><span>' + N(p.paid) + '</span></div>' +
+        kwRow('موّل للصندوق (د.ك)', p.paidKwd, '', 1) +
+        '<div><span class="muted">حصته من التمويل (' + esc(cur()) + ')</span><span>' + N(p.share) + '</span></div>' +
+        kwRow('حصته من التمويل (د.ك)', p.shareKwd) +
         '<div class="t"><span>' + (p.diff > 0.005 ? 'له' : p.diff < -0.005 ? 'عليه' : 'الفرق') + ' (' + esc(cur()) + ')</span><span class="' + (p.diff > 0.005 ? 'good' : p.diff < -0.005 ? 'bad' : '') + '">' + N(p.diff) + '</span></div>' +
-        kwRow((p.diffKwd > 0.0005 ? 'له' : p.diffKwd < -0.0005 ? 'عليه' : 'الفرق') + ' (د.ك)', p.diffKwd, p.diffKwd > 0.0005 ? 'good' : p.diffKwd < -0.0005 ? 'bad' : '', 1) + '</div>' + editBtn(p.name) + '</div>';
+        kwRow((p.diffKwd > 0.0005 ? 'له' : p.diffKwd < -0.0005 ? 'عليه' : 'الفرق') + ' (د.ك)', p.diffKwd, p.diffKwd > 0.0005 ? 'good' : p.diffKwd < -0.0005 ? 'bad' : '', 1) +
+        pairLines(p) + '</div></div>';
     }).join('') + '</div>';
     h += '<h2>التحويلات المقترحة</h2>';
     var tr = num(state.settings.todayRate);
@@ -798,12 +779,10 @@
     if (!c.transfers.length) h += '<div class="card empty" style="margin-top:12px"><b>لا توجد تحويلات مطلوبة</b>الحسابات متساوية بين الشركاء حاليًا.</div>';
     else h += '<div class="stack" style="margin-top:12px">' + c.transfers.map(function (t) { return '<div class="card prow"><span><b>' + esc(t.from) + '</b> يحوّل إلى <b>' + esc(t.to) + '</b></span><b>' + N(t.a) + ' <span class="small muted">' + esc(cur()) + '</span>' + (tr > 0 ? '<div class="small muted" style="font-weight:400">≈ ' + fmtN(t.a / tr, 3) + ' د.ك</div>' : '') + '</b></div>'; }).join('') + '</div>';
     h += '<h2>حركة الصندوق</h2><div class="card"><div class="lines" style="margin-top:0">' +
-      '<div><span class="muted">إجمالي التكاليف المدفوعة</span><span>' + N(c.paidCosts) + '</span></div>' +
-      '<div><span class="muted">منها دفعها الشركاء من جيبهم</span><span>' + N(c.directAll) + '</span></div>' +
-      '<div><span class="muted">مدفوع من التمويل</span><span>' + N(c.fromFunding) + '</span></div>' +
-      '<div><span class="muted">مدفوع من الناتج (المبيعات)</span><span>' + N(c.fromProceeds) + '</span></div>' +
-      '<div class="t"><span>المدفوع من الصندوق</span><span>' + N(c.fundCosts) + '</span></div></div></div>' +
-      '<p class="small muted">التمويل الذي دخل الصندوق ولم يُصرف بعد يُحسب كمساهمة من الشريك، ويبقى رصيده في الصندوق.</p>';
+      '<div><span class="muted">إجمالي التمويل</span><span>' + N(c.funding) + '</span></div>' +
+      '<div><span class="muted">المحصّل من المبيعات والمستحقات</span><span>' + N(c.collected + c.debtIn) + '</span></div>' +
+      '<div><span class="muted">المصروف من الصندوق</span><span>' + N(c.fundCosts) + '</span></div>' +
+      '<div class="t"><span>رصيد الصندوق</span><span>' + N(c.cash) + '</span></div></div></div>';
     return h;
   }
   function viewRecords() {
@@ -833,7 +812,7 @@
       return '<div class="card"><b>الشركاء ونسبهم</b><div class="lines">' + (s0 ? s0.partners.map(function (p) { return '<div><span>' + esc(p.name) + '</span><span>' + N(p.ratio) + '%</span></div>'; }).join('') : '') + '</div></div><div class="note" style="margin-top:12px">تعديل الإعدادات من صلاحية صاحب الصفحة فقط.</div>';
     }
     var s = state.settings, ps = s ? s.partners : [{ name: '', ratio: '' }, { name: '', ratio: '' }, { name: '', ratio: '' }];
-    var h = '<div class="card">' + (s ? '' : '<p style="margin-top:0"><b>أدخل أسماء الشركاء الثلاثة ونسبة كل واحد.</b></p>') + '<form id="setform">';
+    var h = migrateCard() + '<div class="card">' + (s ? '' : '<p style="margin-top:0"><b>أدخل أسماء الشركاء الثلاثة ونسبة كل واحد.</b></p>') + '<form id="setform">';
     ps.forEach(function (p, i) {
       h += '<div class="two"><div class="field"><label for="pn' + i + '">الشريك ' + (i + 1) + '</label><input id="pn' + i + '" type="text" value="' + esc(p.name) + '" autocomplete="off"></div>' +
         '<div class="field"><label for="pr' + i + '">النسبة %</label><input id="pr' + i + '" type="text" inputmode="decimal" value="' + esc(p.ratio === '' ? '' : fmt(num(p.ratio))) + '"></div></div>';
@@ -984,6 +963,33 @@
     else inner = '<input id="' + id + '" type="text" autocomplete="off" value="' + esc(v) + '">';
     return '<div class="field"><label for="' + id + '">' + f.l + (f.req ? ' *' : '') + '</label>' + inner + '</div>';
   }
+  function legacyItems() {
+    var names = partnerNames(), out = [];
+    function nm(x) { return names.indexOf(x.paidBy) >= 0; }
+    state.expenses.forEach(function (x) { if (nm(x) && num(x.amount) > 0) out.push({ coll: 'expenses', rec: x, amount: num(x.amount), date: x.date, label: x.desc || x.category }); });
+    state.incoming.forEach(function (x) { if (nm(x) && num(x.paid) > 0) out.push({ coll: 'incoming', rec: x, amount: num(x.paid), date: x.date, label: x.item }); });
+    state.payroll.forEach(function (x) { if (x.paid === 'yes' && nm(x) && netOf(x) > 0) out.push({ coll: 'payroll', rec: x, amount: netOf(x), date: x.paidDate || x.date, label: 'راتب ' + (x.worker || '') }); });
+    state.debts.forEach(function (x) { if (x.kind !== 'tofarm' && x.status === 'paid' && nm(x) && num(x.amount) > 0) out.push({ coll: 'debts', rec: x, amount: num(x.amount), date: x.paidDate || x.date, label: x.party }); });
+    return out;
+  }
+  function migrateCard() {
+    var L = legacyItems(); if (!L.length) return '';
+    return '<div class="card" style="margin-bottom:12px;border-color:var(--accent)"><b>ترحيل المدفوعات القديمة</b><p style="margin:6px 0">يوجد ' + L.length + ' سجل مدفوع سابقًا من جيب شريك بإجمالي ' + N(sum(L, function (x) { return x.amount; })) + ' ' + esc(cur()) + '. الترحيل يحوّل كل واحد إلى تمويل باسم الشريك، ويجعل الصرف من الصندوق.</p>' +
+      '<div class="err" id="migerr" role="alert"></div><button class="btn" data-a="migrate" id="migbtn">ترحيل الآن</button></div>';
+  }
+  async function runMigrate() {
+    var L = legacyItems(), b = $('migbtn'), err = $('migerr'); if (!L.length) return;
+    if (!confirm('سيتم إنشاء ' + L.length + ' تمويل من المدفوعات القديمة. هل تريد المتابعة؟')) return;
+    b.disabled = true; err.textContent = ''; window.__noLog = true;
+    try {
+      for (var i = 0; i < L.length; i++) {
+        var it = L[i], r = it.rec, f = { date: it.date || today(), partner: r.paidBy, kwd: num(r.kwd) > 0 ? num(r.kwd) : '', rate: num(r.rate) > 0 ? num(r.rate) : '', amount: it.amount, method: '', note: 'من مدفوعات سابقة: ' + (it.label || ''), createdAt: Date.now() + i };
+        await commit('set', 'funding', dbh.collection('funding').doc().id, f, null, 'add');
+        await commit('update', it.coll, r.id, { paidBy: '' }, stripId(r), 'edit');
+      }
+      window.__noLog = false; toast('تم الترحيل'); render();
+    } catch (e) { window.__noLog = false; b.disabled = false; err.textContent = 'تعذّر إكمال الترحيل، حاول مرة أخرى.'; }
+  }
   function kwdLine(p) {
     if (!(p.directKwd > 0)) return '';
     return '<div><span class="muted">ما يقابله بالدينار</span><span>' + fmtN(p.directKwd, 3) + ' د.ك</span></div>';
@@ -1005,15 +1011,13 @@
         '<div><span class="muted">' + (to ? 'مستحق لدى الغير' : 'دين على المزرعة') + '</span><span>' + N(num(d.amount)) + ' ' + esc(cur()) + '</span></div>' +
         '<div><span class="muted">التاريخ</span><span class="num">' + esc(d.date || '') + '</span></div>' +
         (paid && d.paidDate ? '<div><span class="muted">' + (to ? 'تاريخ التحصيل' : 'تاريخ السداد') + '</span><span class="num">' + esc(d.paidDate) + '</span></div>' : '') +
-        (paid && !to && d.paidBy ? '<div><span class="muted">مصدر السداد</span><span>' + esc(d.paidBy) + '</span></div>' : '') +
         (d.note ? '<div><span class="muted">ملاحظات</span><span>' + esc(d.note) + '</span></div>' : '') + '</div>' + btns + '</div>';
-    }).join('') + '</div><p class="small muted">السداد من التمويل أو الناتج ينقص رصيد الصندوق، والسداد من جيب شريك يُحسب عليه ويقسَّم على الشركاء. وما يتم تحصيله من المستحقات يدخل رصيد التمويل.</p>' + addBtn;
+    }).join('') + '</div><p class="small muted">سداد الديون يُخصم من رصيد الصندوق، وما يتم تحصيله من المستحقات يدخل رصيد الصندوق.</p>' + addBtn;
     return h;
   }
   async function debtPay(id) {
     var rec = state.debts.filter(function (x) { return x.id === id; })[0]; if (!rec) return;
     var data = { status: 'paid', paidDate: today() };
-    if (rec.kind !== 'tofarm' && !rec.paidBy) data.paidBy = FUND_F;
     try { await commit('update', 'debts', id, data, stripId(rec), 'pay'); toast(rec.kind === 'tofarm' ? 'تم تسجيل التحصيل' : 'تم تسجيل السداد'); }
     catch (e) { toast('تعذّر الحفظ، حاول مرة أخرى'); }
   }
@@ -1126,6 +1130,7 @@
     return 0;
   }
   function logAct(op, coll, id, data, old, kind) {
+    if (window.__noLog) return;
     var T = TYPES[coll]; if (!T) return;
     var rec = Object.assign({}, old || {}, data || {}), title = '';
     try { title = T.title(rec) || ''; } catch (e) { }
@@ -1133,7 +1138,12 @@
   }
   function seenAt() { try { return parseInt(localStorage.getItem('farm.seen') || '0', 10) || 0; } catch (e) { return 0; } }
   try { if (!localStorage.getItem('farm.seen')) localStorage.setItem('farm.seen', String(Date.now())); } catch (e) { }
-  function unseenList() { var me = window.__farmCloud.myEmail(), t = seenAt(); return window.__farmCloud.activity().filter(function (a) { return a.email !== me && a.at > t; }); }
+  function hiddenIds() { try { return JSON.parse(localStorage.getItem('farm.hidden') || '[]'); } catch (e) { return []; } }
+  function clearedAt() { try { return parseInt(localStorage.getItem('farm.cleared') || '0', 10) || 0; } catch (e) { return 0; } }
+  function visibleActs() { var hd = hiddenIds(), ca = clearedAt(); return window.__farmCloud.activity().filter(function (a) { return a.at > ca && hd.indexOf(a.id) < 0; }); }
+  function unseenList() { var me = window.__farmCloud.myEmail(), t = seenAt(); return visibleActs().filter(function (a) { return a.email !== me && a.at > t; }); }
+  function hideAct(id) { var hd = hiddenIds(); if (hd.indexOf(id) < 0) hd.push(id); try { localStorage.setItem('farm.hidden', JSON.stringify(hd.slice(-500))); } catch (e) { } openActivity(); }
+  function clearActs() { if (!confirm('مسح كل الإشعارات من هذا الجهاز؟')) return; try { localStorage.setItem('farm.cleared', String(Date.now())); localStorage.setItem('farm.hidden', '[]'); } catch (e) { } openActivity(); }
   function whenText(t) { var d = new Date(t); return d.toLocaleDateString('en-CA') + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); }
   function describeAct(a) {
     var v = { add: 'أضاف', edit: 'عدّل', delete: 'حذف', pay: 'سجّل سداد' }[a.op] || 'عدّل';
@@ -1144,11 +1154,11 @@
     return '<button class="banner" data-a="activity"><b>' + n + (n === 1 ? ' تغيير جديد' : ' تغييرات جديدة') + ' من الشركاء</b><span>عرض</span></button>';
   }
   function openActivity() {
-    var list = window.__farmCloud.activity().slice(0, 60), me = window.__farmCloud.myEmail(), t = seenAt();
-    var h = sheetTop('الإشعارات');
+    var list = visibleActs().slice(0, 60), me = window.__farmCloud.myEmail(), t = seenAt();
+    var h = sheetTop('الإشعارات') + (list.length ? '<button class="paybtn" style="margin-bottom:12px;background:var(--bad-soft);color:var(--bad);border-color:var(--bad)" data-a="actclear">مسح كل الإشعارات</button>' : '');
     h += list.length ? '<div class="stack">' + list.map(function (a) {
       var fresh = a.email !== me && a.at > t;
-      return '<div class="card" style="' + (fresh ? 'border-color:var(--accent)' : '') + '"><div>' + esc(describeAct(a)) + '</div><div class="small muted" style="margin-top:4px">' + esc(whenText(a.at)) + (a.email === me ? ' · أنت' : '') + '</div></div>';
+      return '<div class="card" style="' + (fresh ? 'border-color:var(--accent)' : '') + '"><div>' + esc(describeAct(a)) + '</div><div class="small muted" style="margin-top:4px">' + esc(whenText(a.at)) + (a.email === me ? ' · أنت' : '') + '</div><button class="paybtn" style="margin-top:8px;width:auto;padding:0 14px;min-height:36px" data-a="actdel" data-id="' + esc(a.id) + '">حذف</button></div>';
     }).join('') + '</div>' : '<div class="card empty"><b>لا توجد إشعارات بعد</b>تظهر هنا إضافات وتعديلات وحذف الشركاء فور حدوثها.</div>';
     openSheet(h);
     try { localStorage.setItem('farm.seen', String(Date.now())); } catch (e) { }
@@ -1216,8 +1226,9 @@
     L.push('تقرير المزرعة بتاريخ ' + today());
     L.push('');
     L.push('رصيد الصندوق: ' + fmt(c.cash) + ' ' + cur());
-    L.push('إجمالي التمويل: ' + fmt(c.funding) + ' (المتبقي منه ' + fmt(c.fundBal) + ')');
-    L.push('المحصّل من المبيعات: ' + fmt(c.collected) + ' (المتبقي منه ' + fmt(c.procBal) + ')');
+    L.push('إجمالي التمويل: ' + fmt(c.funding));
+    L.push('المحصّل من المبيعات: ' + fmt(c.collected));
+    L.push('المصروف من الصندوق: ' + fmt(c.fundCosts));
     var rk = sum(state.funding, function (x) { return num(x.kwd); });
     if (rk > 0) L.push('منه مستلم بالدينار الكويتي: ' + fmtN(rk, 3) + ' د.ك');
     L.push('التكاليف (بدون الرواتب): ' + fmt(c.costs));
@@ -1231,7 +1242,9 @@
     L.push('');
     L.push('حساب الشركاء:');
     c.p.forEach(function (p) {
-      L.push('- ' + p.name + ': دفع ' + fmt(p.paid) + '، حصته ' + fmt(p.share) + '، ' + (p.diff > 0.005 ? 'له ' + fmt(p.diff) : p.diff < -0.005 ? 'عليه ' + fmt(-p.diff) : 'متساوٍ'));
+      L.push('- ' + p.name + ': موّل ' + fmt(p.paid) + (p.paidKwd > 0 ? ' (' + fmtN(p.paidKwd, 3) + ' د.ك)' : '') + '، حصته ' + fmt(p.share) + '، ' + (p.diff > 0.005 ? 'له ' + fmt(p.diff) : p.diff < -0.005 ? 'عليه ' + fmt(-p.diff) : 'متساوٍ'));
+      p.owedToMe.forEach(function (t) { L.push('   له عند ' + t.debt + ': ' + fmt(t.egp) + (t.kwd > 0.0005 ? ' (' + fmtN(t.kwd, 3) + ' د.ك)' : '')); });
+      p.iOwe.forEach(function (t) { L.push('   عليه لـ ' + t.cred + ': ' + fmt(t.egp) + (t.kwd > 0.0005 ? ' (' + fmtN(t.kwd, 3) + ' د.ك)' : '')); });
     });
     if (c.transfers.length) {
       L.push(''); L.push('التحويلات المقترحة:');
@@ -1261,7 +1274,7 @@
   function openForm(type, rec) {
     var T = TYPES[type]; cur_edit = { type: type, id: rec ? rec.id : null, createdAt: rec ? rec.createdAt : null, old: rec ? stripId(rec) : null };
     var d = rec || {};
-    if (!rec) { d = { date: today() }; if (type === 'incoming' || type === 'expenses') d.paidBy = FUND_F; if (type === 'payroll') { d.paid = 'yes'; d.paidBy = FUND_F; } if (type === 'debts') { d.kind = 'onfarm'; d.status = 'unpaid'; } }
+    if (!rec) { d = { date: today() };  if (type === 'payroll') { d.paid = 'yes'; } if (type === 'debts') { d.kind = 'onfarm'; d.status = 'unpaid'; } }
     var h = sheetTop((rec ? (state.isAdmin ? 'تعديل ' : 'طلب تعديل ') : (state.isAdmin ? 'تسجيل ' : 'طلب إضافة ')) + T.label) + '<form id="recform" novalidate>';
     var i = 0, fs = T.fields;
     while (i < fs.length) {
@@ -1303,8 +1316,7 @@
     var btn = $('savebtn'); btn.disabled = true; err.textContent = '';
     try {
       if (type === 'debts') {
-        if (d.status === 'paid') { if (!d.paidDate) d.paidDate = today(); if (d.kind === 'onfarm' && !d.paidBy) d.paidBy = FUND_F; if (d.kind === 'tofarm') d.paidBy = ''; }
-        else { d.paidDate = ''; d.paidBy = ''; }
+        if (d.status === 'paid') { if (!d.paidDate) d.paidDate = today(); } else { d.paidDate = ''; }
       }
       d.createdAt = cur_edit.createdAt || Date.now();
       var rid = cur_edit.id || dbh.collection(type).doc().id;
@@ -1325,14 +1337,12 @@
       list.map(function (x) { return '<div><span>' + esc(x.worker) + ' <span class="muted small"><span class="num">' + esc(String(x.date || '').slice(0, 7)) + '</span></span></span><span>' + N(netOf(x)) + '</span></div>'; }).join('') +
       '<div class="t"><span>الإجمالي</span><span>' + N(sum(list, netOf)) + ' ' + esc(cur()) + '</span></div></div></div>' +
       '<form id="payform" novalidate>' + fieldHtml({ k: 'payDate', t: 'date', l: 'تاريخ الصرف', req: 1 }, today()) +
-      fieldHtml({ k: 'payBy', t: 'select', l: 'مصدر الصرف', opts: payerOpts, req: 1 }, FUND_F) +
       '<div class="err" id="payerr" role="alert"></div><button type="submit" class="btn" id="paysave">' + (state.isAdmin ? 'تأكيد الصرف' : 'إرسال للموافقة') + '</button></form>';
     openSheet(h);
     $('payform').onsubmit = function (e) { e.preventDefault(); savePay(); };
   }
   async function savePay() {
-    var by = $('f_payBy').value, dt = $('f_payDate').value, err = $('payerr');
-    if (!by) { err.textContent = 'اختر من صرف الراتب (شريك أو صندوق المزرعة)'; return; }
+    var dt = $('f_payDate').value, err = $('payerr');
     if (!dt) { err.textContent = 'اكتب تاريخ الصرف'; return; }
     var btn = $('paysave'); btn.disabled = true; err.textContent = '';
     var done = 0;
@@ -1340,7 +1350,7 @@
       var res = 'done';
       for (var i = 0; i < payIds.length; i++) {
         var old = state.payroll.filter(function (x) { return x.id === payIds[i]; })[0];
-        res = await commit('update', 'payroll', payIds[i], { paid: 'yes', paidBy: by, paidDate: dt }, old ? stripId(old) : null, 'pay'); done++;
+        res = await commit('update', 'payroll', payIds[i], { paid: 'yes', paidDate: dt }, old ? stripId(old) : null, 'pay'); done++;
       }
       toast(res === 'requested' ? (done > 1 ? 'تم إرسال ' + done + ' طلبات للموافقة' : 'تم إرسال الطلب لموافقة صاحب الصفحة') : (done > 1 ? 'تم صرف ' + done + ' رواتب' : 'تم تسجيل الصرف')); closeSheet();
     } catch (e) {
@@ -1409,8 +1419,11 @@
     else if (a === 'dorestore') doRestore();
     else if (a === 'logout') window.__farmCloud.logout();
     else if (a === 'activity') openActivity();
+    else if (a === 'actdel') hideAct(b.getAttribute('data-id'));
+    else if (a === 'actclear') clearActs();
     else if (a === 'mkacct') makeAccount();
     else if (a === 'rmacct') { if (confirm('إيقاف دخول هذا الشريك؟')) window.__farmCloud.removeAccess(b.getAttribute('data-e')).then(function () { toast('تم الإيقاف'); }); }
+    else if (a === 'migrate') runMigrate();
     else if (a === 'debtpay') debtPay(b.getAttribute('data-id'));
     else if (a === 'debtdel') debtDel(b.getAttribute('data-id'));
     else if (a === 'noop') { }
