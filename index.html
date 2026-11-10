@@ -724,11 +724,18 @@
       p.iOwe.map(function (t) { return '<div><span class="muted">عليه لـ ' + esc(t.cred) + '</span><span class="bad">' + pairVal(t) + '</span></div>'; }).join('');
   }
   function accountBox(c) {
-    return '<div class="card"><b>الحساب بين الشركاء</b><div class="lines">' + c.p.map(function (p) {
+    function eq(paid, share, d, fmtf) {
+      var w = d > 0.0005 ? 'له' : d < -0.0005 ? 'عليه' : 'متساوٍ';
+      return '<span dir="ltr">' + fmtf(paid) + ' − ' + fmtf(share) + ' = ' + fmtf(Math.abs(d)) + '</span> ' + w;
+    }
+    return '<div class="card"><b>الحساب بين الشركاء</b><p class="small muted" style="margin:4px 0 0">الصافي = ما موّله الشريك − حصته من إجمالي التمويل</p><div class="lines">' + c.p.map(function (p) {
       var cls = p.diff > 0.005 ? 'good' : p.diff < -0.005 ? 'bad' : '';
       var t = p.diff > 0.005 ? 'له ' + N(p.diff) : p.diff < -0.005 ? 'عليه ' + N(-p.diff) : 'متساوٍ';
       var tk = Math.abs(p.diffKwd) > 0.0005 ? '<div class="small muted" style="font-weight:400">' + (p.diffKwd > 0 ? 'له ' : 'عليه ') + kw(p.diffKwd) + '</div>' : '';
-      return '<div><span>' + esc(p.name) + '</span><span class="' + cls + '"><b>' + t + '</b>' + tk + '</span></div>';
+      var row = '<div><span>' + esc(p.name) + '</span><span class="' + cls + '"><b>' + t + '</b>' + tk + '</span></div>';
+      var calc = '<div class="small muted" style="margin:-4px 0 6px;line-height:1.7">' + esc(cur()) + ': ' + eq(p.paid, p.share, p.diff, fmt) +
+        (c.totalPaidKwd > 0 ? '<br>د.ك: ' + eq(p.paidKwd, p.shareKwd, p.diffKwd, function (v) { return fmtN(v, 3); }) : '') + '</div>';
+      return row + calc;
     }).join('') + '</div>' + gapsNote(c) + '</div>';
   }
   function splitLines(c, p) {
