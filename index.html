@@ -469,7 +469,7 @@
     funding: { label: 'تمويل', hint: 'أي مبلغ يدفعه شريك للمزرعة (يُقسَّم على الشركاء)', fields: [
       { k: 'date', t: 'date', l: 'تاريخ الاستلام', req: 1 },
       { k: 'partner', t: 'select', l: 'الشريك', opts: partnerNames, req: 1 },
-      { k: 'kwd', t: 'money', l: 'المبلغ بالدينار الكويتي (د.ك)', half: 1 },
+      { k: 'kwd', t: 'money', l: 'المبلغ بالدينار الكويتي (د.ك)', req: 1, half: 1 },
       { k: 'rate', t: 'money', l: 'سعر الصرف (جنيه لكل دينار)', half: 1 },
       { k: 'amount', t: 'money', l: 'المبلغ بالجنيه المصري', req: 1 },
       { k: 'method', t: 'text', l: 'طريقة الدفع' },
@@ -609,6 +609,10 @@
     c.fromProceeds = 0; c.fromFunding = c.fundCosts;
     c.fundBal = c.funding + c.debtIn - c.fundCosts; c.procBal = c.collected;
     c.cash = c.funding + c.debtIn + c.collected - c.fundCosts;
+    c.fundingKwd = sum(S.funding, function (x) { return num(x.kwd); });
+    var withK = S.funding.filter(function (x) { return num(x.kwd) > 0; });
+    c.avgRate = sum(withK, function (x) { return num(x.amount); }) / (sum(withK, function (x) { return num(x.kwd); }) || 1);
+    if (!withK.length) c.avgRate = 0;
     // products
     var names = {};
     ['production', 'outgoing', 'waste'].forEach(function (k) { S[k].forEach(function (x) { if (x.product) names[x.product] = 1; }); });
@@ -676,7 +680,7 @@
   function viewHome(c) {
     if (!state.settings) return state.loaded.settings ? viewSetupNeeded() : '<div class="empty">جارٍ التحميل…</div>';
     var h = reqBanner() + backupReminder() + activityBanner() + '<div class="hero"><div class="lbl">رصيد صندوق المزرعة الآن</div><div class="big">' + N(c.cash) + '<small>' + esc(cur()) + '</small></div>' +
-      '<div class="row"><span>إجمالي التمويل <b>' + N(c.funding) + '</b></span><span>المحصّل من المبيعات <b>' + N(c.collected) + '</b></span></div></div>';
+      '<div class="row"><span>إجمالي التمويل <b>' + (c.fundingKwd > 0 ? fmtN(c.fundingKwd, 3) + ' د.ك ≈ ' : '') + N(c.funding) + ' ' + esc(cur()) + '</b></span><span>المحصّل من المبيعات <b>' + N(c.collected) + '</b></span></div></div>';
     if (totalRecords() === 0) h += '<div class="note" style="margin-top:12px">لا توجد سجلات بعد. اضغط زر <b>+</b> وابدأ بتسجيل تمويل كل شريك.</div>';
     h += '<div class="grid">' +
       kpi('التكاليف (بدون الرواتب)', N(c.costs)) +
@@ -786,10 +790,14 @@
     if (!c.transfers.length) h += '<div class="card empty" style="margin-top:12px"><b>لا توجد تحويلات مطلوبة</b>الحسابات متساوية بين الشركاء حاليًا.</div>';
     else h += '<div class="stack" style="margin-top:12px">' + c.transfers.map(function (t) { return '<div class="card prow"><span><b>' + esc(t.from) + '</b> يحوّل إلى <b>' + esc(t.to) + '</b></span><b>' + N(t.a) + ' <span class="small muted">' + esc(cur()) + '</span>' + (tr > 0 ? '<div class="small muted" style="font-weight:400">≈ ' + fmtN(t.a / tr, 3) + ' د.ك</div>' : '') + '</b></div>'; }).join('') + '</div>';
     h += '<h2>حركة الصندوق</h2><div class="card"><div class="lines" style="margin-top:0">' +
-      '<div><span class="muted">إجمالي التمويل</span><span>' + N(c.funding) + '</span></div>' +
+      '<div><span class="muted">إجمالي التمويل (' + esc(cur()) + ')</span><span>' + N(c.funding) + '</span></div>' +
+      (c.fundingKwd > 0 ? '<div><span class="muted">إجمالي التمويل (د.ك)</span><span>' + fmtN(c.fundingKwd, 3) + ' د.ك</span></div>' : '') +
+      (c.avgRate > 0 ? '<div><span class="muted">متوسط سعر صرف التمويل</span><span>' + fmtN(c.avgRate, 3) + '</span></div>' : '') +
       '<div><span class="muted">المحصّل من المبيعات والمستحقات</span><span>' + N(c.collected + c.debtIn) + '</span></div>' +
       '<div><span class="muted">المصروف من الصندوق</span><span>' + N(c.fundCosts) + '</span></div>' +
-      '<div class="t"><span>رصيد الصندوق</span><span>' + N(c.cash) + '</span></div></div></div>';
+      '<div class="t"><span>رصيد الصندوق (' + esc(cur()) + ')</span><span>' + N(c.cash) + '</span></div>' +
+      (c.avgRate > 0 ? '<div><span class="muted">ما يعادله بالدينار (بمتوسط سعر التمويل)</span><span>' + fmtN(c.cash / c.avgRate, 3) + ' د.ك</span></div>' : '') + '</div></div>' +
+      '<p class="small muted">التمويل يُسجَّل بالدينار الكويتي مع ما يعادله بالجنيه وقت التسجيل، وكل الصرف من الصندوق يُسجَّل بالجنيه.</p>';
     return h;
   }
   function viewRecords() {
@@ -1233,7 +1241,7 @@
     L.push('تقرير المزرعة بتاريخ ' + today());
     L.push('');
     L.push('رصيد الصندوق: ' + fmt(c.cash) + ' ' + cur());
-    L.push('إجمالي التمويل: ' + fmt(c.funding));
+    L.push('إجمالي التمويل: ' + (c.fundingKwd > 0 ? fmtN(c.fundingKwd, 3) + ' د.ك ≈ ' : '') + fmt(c.funding) + ' ' + cur());
     L.push('المحصّل من المبيعات: ' + fmt(c.collected));
     L.push('المصروف من الصندوق: ' + fmt(c.fundCosts));
     var rk = sum(state.funding, function (x) { return num(x.kwd); });
