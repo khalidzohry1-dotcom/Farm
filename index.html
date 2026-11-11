@@ -468,7 +468,12 @@
     var el = e.target; if (!el || el.tagName !== 'INPUT' || el.type === 'password' || el.type === 'email') return;
     var v = el.value, n = latin(v);
     if (el.getAttribute('data-date')) { var dg = n.replace(/\D/g, '').slice(0, 8); n = dg.length > 6 ? dg.slice(0, 4) + '-' + dg.slice(4, 6) + '-' + dg.slice(6) : dg.length > 4 ? dg.slice(0, 4) + '-' + dg.slice(4) : dg; }
-    if (n !== v) el.value = n;
+    if (el.getAttribute('data-money')) {
+      var m = n.replace(/[^0-9.]/g, ''), pt = m.indexOf('.'); if (pt >= 0) m = m.slice(0, pt + 1) + m.slice(pt + 1).replace(/\./g, '');
+      var ip = pt >= 0 ? m.slice(0, pt) : m, fp = pt >= 0 ? m.slice(pt) : '';
+      n = ip.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + fp;
+    }
+    if (n !== v) { var atEnd = el.selectionStart === v.length; var dig = v.slice(0, el.selectionStart || 0).replace(/[^0-9٠-٩.]/g, '').length; el.value = n; if (!atEnd) { var k = 0, pos = 0; while (pos < n.length && k < dig) { if (/[0-9.]/.test(n[pos])) k++; pos++; } try { el.setSelectionRange(pos, pos); } catch (x) { } } }
   }, true);
   function fmt(n) { n = Math.round((n + Number.EPSILON) * 100) / 100; return Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
   function fmtN(n, d) { return Number(Number(n).toFixed(d)).toLocaleString('en-US', { maximumFractionDigits: d }); }
@@ -1004,7 +1009,7 @@
         return '<option value="' + esc(ov) + '"' + (String(v) === ov ? ' selected' : '') + '>' + esc(ol) + '</option>';
       }).join('') + '</select>';
     } else if (f.t === 'date') inner = '<input id="' + id + '" type="text" data-date="1" inputmode="numeric" dir="ltr" maxlength="10" placeholder="YYYY-MM-DD" autocomplete="off" value="' + esc(v) + '">';
-    else if (f.t === 'money' || f.t === 'qty') inner = '<input id="' + id + '" type="text" inputmode="decimal" autocomplete="off" value="' + esc(v === '' ? '' : v) + '">';
+    else if (f.t === 'money' || f.t === 'qty') inner = '<input id="' + id + '" type="text" inputmode="decimal" data-money="1" autocomplete="off" value="' + esc(v === '' ? '' : v) + '">';
     else if (f.t === 'combo') inner = '<input id="' + id + '" type="text" list="dl_' + f.k + '" autocomplete="off" value="' + esc(v) + '"><datalist id="dl_' + f.k + '">' + productList().map(function (p) { return '<option value="' + esc(p) + '">'; }).join('') + '</datalist>';
     else inner = '<input id="' + id + '" type="text" autocomplete="off" value="' + esc(v) + '">';
     return '<div class="field"><label for="' + id + '">' + f.l + (f.req ? ' *' : '') + '</label>' + inner + '</div>';
