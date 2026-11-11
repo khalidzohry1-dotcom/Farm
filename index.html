@@ -148,7 +148,12 @@
   .field { margin-top: 14px; }
   .field label { display: block; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
   .field input, .field select { width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-height: 48px; }
-  .field input[inputmode="decimal"] { direction: ltr; text-align: end; }
+  .field input[inputmode="decimal"], .field input[data-date] { direction: ltr; text-align: end; }
+  details.how { margin-top: 10px; font-size: 14px; } details.how summary { color: var(--accent); cursor: pointer; padding: 4px 0; font-weight: 600; }
+  .res { text-align: end; font-weight: 700; font-size: 20px; line-height: 1.25; } .res small { display: block; font-weight: 500; font-size: 13px; color: var(--muted); }
+  .dv { text-align: end; } .dv small { display: block; color: var(--muted); font-size: 12px; line-height: 1.3; }
+  .sec { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); font-weight: 600; }
+  .sent { margin-top: 6px; font-size: 15px; line-height: 1.6; } .sent b { font-weight: 700; }
   .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .calc { margin-top: 16px; background: var(--accent-soft); border-radius: 12px; padding: 12px 14px; display: flex; justify-content: space-between; font-weight: 600; }
   .btn { width: 100%; min-height: 52px; border-radius: 14px; border: 0; background: var(--accent); color: var(--accent-fg); font-weight: 600; font-size: 17px; margin-top: 20px; }
@@ -392,6 +397,10 @@
       try { await second.auth().signOut(); } catch (e) { }
       await fs.collection('accounts').doc(email).set({ id: id, label: String(label || '').trim(), createdAt: Date.now() });
     },
+    clearActivity: async function () {
+      var snap = await fs.collection('activity').get(), docs = snap.docs;
+      for (var i = 0; i < docs.length; i += 400) { var b = fs.batch(); docs.slice(i, i + 400).forEach(function (d) { b.delete(d.ref); }); await b.commit(); }
+    },
     removeAccess: function (email) { return fs.collection('accounts').doc(email).delete(); }
   };
 
@@ -433,7 +442,9 @@
   'use strict';
   var FUND = 'صندوق المزرعة'; // قديم: يُعامل كتمويل
   var FUND_F = 'التمويل', FUND_P = 'الناتج';
-  var CATS = ['مياه وري', 'كهرباء ووقود', 'نقل وشحن', 'إيجار', 'تأسيس وإنشاءات', 'رسوم وتراخيص', 'عمالة يومية', 'معدات وتصليح', 'بذور وشتلات', 'أسمدة ومواد', 'أخرى'];
+  var CATS = ['مياه وري', 'كهرباء ووقود', 'نقل وشحن', 'إيجار', 'تأسيس وإنشاءات', 'رسوم وتراخيص', 'عمالة يومية', 'معدات وتصليح', 'بذور وشتلات', 'أسمدة ومواد', 'تعديل الأرض', 'شراء حيوانات', 'أخرى'];
+  var SRC = { animals: 'بيع حيوانات', land: 'إنتاج الأرض (محصول)', other: 'إيراد آخر' };
+  function srcOf(x) { return SRC[x.src] ? x.src : 'other'; }
   var INCATS = ['مبيدات', 'أعلاف', 'عبوات وتغليف', 'أخرى'];
   var UNITS = ['كجم', 'طن', 'صندوق', 'شكارة', 'عدد', 'لتر'];
   var REASONS = ['تلف', 'أمراض وآفات', 'عوامل جوية', 'سوء تخزين', 'سرقة', 'انتهاء صلاحية', 'أخرى'];
@@ -452,6 +463,13 @@
     var s = String(v).replace(/[٠-٩]/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'.indexOf(d); }).replace(/٫/g, '.').replace(/[,،\s]/g, '');
     var n = parseFloat(s); return isFinite(n) ? n : 0;
   }
+  function latin(s) { return String(s).replace(/[٠-٩]/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'.indexOf(d); }).replace(/[۰-۹]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d); }).replace(/٫/g, '.'); }
+  document.addEventListener('input', function (e) {
+    var el = e.target; if (!el || el.tagName !== 'INPUT' || el.type === 'password' || el.type === 'email') return;
+    var v = el.value, n = latin(v);
+    if (el.getAttribute('data-date')) { var dg = n.replace(/\D/g, '').slice(0, 8); n = dg.length > 6 ? dg.slice(0, 4) + '-' + dg.slice(4, 6) + '-' + dg.slice(6) : dg.length > 4 ? dg.slice(0, 4) + '-' + dg.slice(4) : dg; }
+    if (n !== v) el.value = n;
+  }, true);
   function fmt(n) { n = Math.round((n + Number.EPSILON) * 100) / 100; return Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
   function fmtN(n, d) { return Number(Number(n).toFixed(d)).toLocaleString('en-US', { maximumFractionDigits: d }); }
   function N(n) { return '<span class="num">' + fmt(n) + '</span>'; }
@@ -497,17 +515,18 @@
       calc: function (d) { var t = num(d.qty) * num(d.price); return [['الإجمالي', t], ['المتبقي للمورد', t - num(d.paid)]]; },
       title: function (d) { return d.item; }, meta: function (d) { return [d.category, d.supplier, d.qty ? fmt(num(d.qty)) + ' ' + (d.unit || '') : '']; },
       val: function (d) { var t = num(d.qty) * num(d.price); var rest = t - num(d.paid); return { v: t, cur: 1, sub: rest > 0.005 ? 'متبقي ' + fmt(rest) : '' }; } },
-    outgoing: { label: 'بيع', hint: 'مبيعات المحصول للعملاء', fields: [
+    outgoing: { label: 'بيع', hint: 'بيع حيوانات أو محصول الأرض، والمحصّل يدخل صندوق المزرعة', fields: [
       { k: 'date', t: 'date', l: 'التاريخ', req: 1 },
-      { k: 'product', t: 'combo', l: 'المنتج', req: 1 },
+      { k: 'src', t: 'select', l: 'مصدر الإيراد', opts: function () { return ['animals|' + SRC.animals, 'land|' + SRC.land, 'other|' + SRC.other]; }, req: 1 },
+      { k: 'product', t: 'combo', l: 'المنتج / الصنف (مثال: عجل، قمح)', req: 1 },
       { k: 'customer', t: 'text', l: 'العميل' },
       { k: 'qty', t: 'qty', l: 'الكمية', req: 1, half: 1 },
       { k: 'unit', t: 'select', l: 'الوحدة', opts: function () { return UNITS; }, half: 1 },
       { k: 'price', t: 'money', l: 'سعر الوحدة', req: 1 },
       { k: 'collected', t: 'money', l: 'المحصّل من العميل' },
       { k: 'note', t: 'text', l: 'ملاحظات' }],
-      calc: function (d) { var t = num(d.qty) * num(d.price); return [['الإجمالي', t], ['المتبقي على العميل', t - num(d.collected)]]; },
-      title: function (d) { return d.product; }, meta: function (d) { return [d.customer, d.qty ? fmt(num(d.qty)) + ' ' + (d.unit || '') : '']; },
+      calc: function (d) { var t = num(d.qty) * num(d.price); return [['إجمالي البيع', t], ['يدخل الصندوق الآن (المحصّل)', num(d.collected)], ['المتبقي على العميل', t - num(d.collected)]]; },
+      title: function (d) { return d.product; }, meta: function (d) { return [SRC[srcOf(d)], d.customer, d.qty ? fmt(num(d.qty)) + ' ' + (d.unit || '') : '']; },
       val: function (d) { var t = num(d.qty) * num(d.price); var rest = t - num(d.collected); return { v: t, cur: 1, cls: 'good', sub: rest > 0.005 ? 'متبقي ' + fmt(rest) : '' }; } },
     production: { label: 'إنتاج', hint: 'كميات الحصاد والإنتاج', fields: [
       { k: 'date', t: 'date', l: 'التاريخ', req: 1 },
@@ -552,7 +571,7 @@
       title: function (d) { return d.party; }, meta: function (d) { return [d.kind === 'tofarm' ? 'مستحق لدى الغير' : 'دين على المزرعة', d.status === 'paid' ? 'مدفوع' + (d.paidDate ? ' ' + d.paidDate : '') : 'غير مدفوع', d.note]; },
       val: function (d) { return { v: num(d.amount), cur: 1, cls: d.status === 'paid' ? 'good' : 'bad', sub: d.status === 'paid' ? (d.kind === 'tofarm' ? 'تم التحصيل' : 'تم السداد') : 'غير مدفوع' }; } }
   };
-  var TYPE_KEYS = ['funding', 'expenses', 'incoming', 'outgoing', 'production', 'waste', 'payroll', 'debts'];
+  TYPES.outgoing.label = 'بيع'; var TYPE_KEYS = ['funding', 'expenses', 'incoming', 'outgoing', 'production', 'waste', 'payroll', 'debts'];
 
   // ---------- calculations (same logic as the Excel workbook) ----------
   function compute() {
@@ -565,8 +584,12 @@
     c.salPaid = sum(S.payroll, function (x) { return x.paid === 'yes' ? netOf(x) : 0; });
     c.rev = sum(S.outgoing, function (x) { return num(x.qty) * num(x.price); });
     c.collected = sum(S.outgoing, function (x) { return num(x.collected); });
+    c.revSrc = { animals: 0, land: 0, other: 0 }; c.colSrc = { animals: 0, land: 0, other: 0 };
+    S.outgoing.forEach(function (x) { var k = srcOf(x); c.revSrc[k] += num(x.qty) * num(x.price); c.colSrc[k] += num(x.collected); });
+    var ec = {}; S.expenses.forEach(function (x) { var k = x.category || 'أخرى'; ec[k] = (ec[k] || 0) + num(x.amount); });
+    c.expCat = Object.keys(ec).map(function (k) { return { n: k, v: ec[k] }; }).sort(function (a, b) { return b.v - a.v; });
     c.costs = c.exp + c.incTotal; // salaries are kept separate from costs and from net profit
-    c.net = c.rev - c.costs;
+    c.net = c.rev - c.costs; c.afterSal = c.net - c.salTotal;
     c.receivable = c.rev - c.collected;
     c.payable = c.incTotal - c.incPaid;
     c.salDue = c.salTotal - c.salPaid;
@@ -683,19 +706,13 @@
       '<div class="row"><span>إجمالي التمويل <b>' + (c.fundingKwd > 0 ? fmtN(c.fundingKwd, 3) + ' د.ك ≈ ' : '') + N(c.funding) + ' ' + esc(cur()) + '</b></span><span>المحصّل من المبيعات <b>' + N(c.collected) + '</b></span></div></div>';
     if (totalRecords() === 0) h += '<div class="note" style="margin-top:12px">لا توجد سجلات بعد. اضغط زر <b>+</b> وابدأ بتسجيل تمويل كل شريك.</div>';
     h += '<div class="grid">' +
-      kpi('التكاليف (بدون الرواتب)', N(c.costs)) +
-      kpi('إيرادات المبيعات', N(c.rev)) +
-      kpi('صافي الربح / الخسارة (قبل الرواتب)', N(c.net), c.net > 0.005 ? 'good' : c.net < -0.005 ? 'bad' : '') +
       salaryStatus(c) +
       kpi('مستحق التحصيل', N(c.receivable)) +
       kpi('مستحق للموردين', N(c.payable)) +
       '</div>';
-    h += '<button class="btn ghost" style="margin-top:12px" data-a="share">إرسال تقرير للشركاء</button><h2>الشركاء</h2><div class="stack">' + c.p.map(function (p) {
-      return '<div class="card"><div class="prow"><span class="nm">' + esc(p.name) + '</span>' + pill(p.diff) + '</div><div class="lines">' +
-        '<div><span class="muted">موّل للصندوق (' + esc(cur()) + ')</span><span>' + N(p.funded) + '</span></div>' +
-        kwRow('موّل للصندوق (د.ك)', p.fundedKwd) +
-        pairLines(p) + '</div></div>';
-    }).join('') + '</div><div style="margin-top:12px">' + accountBox(c) + '</div><p class="small muted">التفاصيل وطريقة التحويل في تبويب «التسوية».</p>';
+    h += '<button class="btn ghost" style="margin-top:12px" data-a="share">إرسال تقرير للشركاء</button>' + profitBox(c) + '<h2>الشركاء</h2><div class="stack">' + c.p.map(function (p) {
+      return '<div class="card"><div class="prow"><span class="nm">' + esc(p.name) + '</span>' + resBox(p) + '</div><div class="lines"><div><span class="muted">إجمالي ما موّله</span>' + dv(p.funded, p.fundedKwd) + '</div></div></div>';
+    }).join('') + '</div><p class="small muted">تفاصيل «له / عليه» والتحويلات في تبويب «التسوية».</p>';
     h += receivedSection();
     h += debtsSection(c);
     h += '<h2>المنتجات</h2>';
@@ -710,6 +727,21 @@
     h += '<p class="small muted">قيمة الهالك التقديرية <b>' + N(c.waste) + '</b> ' + esc(cur()) + ' للمعلومية فقط ولا تُخصم مرة ثانية من الربح.</p>';
     return h;
   }
+  function profitBox(c) {
+    var h = '<h2>التكاليف وصافي الربح</h2><div class="card"><div class="lines" style="margin-top:0">' +
+      '<div><span class="muted">إيرادات المبيعات</span><span>' + N(c.rev) + '</span></div>' +
+      Object.keys(SRC).filter(function (k) { return c.revSrc[k] > 0.005; }).map(function (k) { return '<div class="small"><span class="muted">&nbsp;&nbsp;' + SRC[k] + '</span><span class="muted">' + N(c.revSrc[k]) + '</span></div>'; }).join('') +
+      '<div class="sec" style="margin:4px 0 0">التكاليف (بدون الرواتب)</div>' +
+      c.expCat.map(function (e) { return '<div class="small"><span class="muted">&nbsp;&nbsp;' + esc(e.n) + '</span><span class="muted">' + N(e.v) + '</span></div>'; }).join('') +
+      (c.incTotal > 0.005 ? '<div class="small"><span class="muted">&nbsp;&nbsp;مشتريات الوارد (بذور، أسمدة، أعلاف…)</span><span class="muted">' + N(c.incTotal) + '</span></div>' : '') +
+      '<div class="t"><span>إجمالي التكاليف</span><span>' + N(c.costs) + '</span></div>' +
+      '<div class="t"><span>صافي الربح = الإيرادات − التكاليف</span><span class="' + (c.net > 0.005 ? 'good' : c.net < -0.005 ? 'bad' : '') + '">' + N(c.net) + '</span></div>' +
+      '</div><p class="small muted" style="margin:10px 0 0">التكاليف تشمل كل المصروفات ومشتريات الوارد (ومنها تعديل الأرض وشراء الحيوانات)، ولا تشمل الرواتب. صافي الربح قبل الرواتب، ويُحسب من إيراد البيع كاملًا حتى لو لم يُحصَّل بعد.</p>' +
+      '<div class="lines"><div><span class="muted">الرواتب (منفصلة)</span><span>' + N(c.salTotal) + '</span></div>' +
+      '<div class="t"><span>الربح بعد الرواتب (للمعلومية)</span><span class="' + (c.afterSal > 0.005 ? 'good' : c.afterSal < -0.005 ? 'bad' : '') + '">' + N(c.afterSal) + '</span></div></div>' +
+      (c.p.length ? '<details class="how"><summary>نصيب كل شريك من صافي الربح</summary><div class="lines">' + c.p.map(function (p) { return '<div><span>' + esc(p.name) + ' <span class="muted small">(' + fmt(p.ratio) + '%)</span></span><span>' + N(p.profit) + '</span></div>'; }).join('') + '</div></details>' : '') + '</div>';
+    return h;
+  }
   function salShares(c) {
     var h = '<h2>الرواتب على الشركاء</h2>';
     if (c.salTotal <= 0.005) return h + '<div class="card empty"><b>لا توجد رواتب مسجلة</b>بعد تسجيل الرواتب يظهر هنا نصيب كل شريك منها.</div>';
@@ -722,25 +754,23 @@
   function kw(v) { return fmtN(Math.abs(v), 3) + ' د.ك'; }
   function kwRow(label, v, cls, t) { return '<div' + (t ? ' class="t"' : '') + '><span' + (t ? '' : ' class="muted"') + '>' + label + '</span><span' + (cls ? ' class="' + cls + '"' : '') + '>' + kw(v) + '</span></div>'; }
   function gapsNote(c) { return c.gaps > 0 ? '<p class="small muted">يوجد ' + c.gaps + ' تمويل مسجّل بلا مقابل بالدينار، فلا يدخل في أرقام الدينار. افتحه وأضف المبلغ بالدينار وسعر الصرف.</p>' : ''; }
+  function dv(egp, kwd, cls) { return '<span class="dv ' + (cls || '') + '">' + N(egp) + (kwd != null && Math.abs(kwd) > 0.0005 ? '<small>' + kw(kwd) + '</small>' : '') + '</span>'; }
+  function resBox(p) {
+    var w = p.diff > 0.005 ? 'له' : p.diff < -0.005 ? 'عليه' : 'متساوٍ', cls = p.diff > 0.005 ? 'good' : p.diff < -0.005 ? 'bad' : 'muted';
+    return '<span class="res ' + cls + '">' + (w === 'متساوٍ' ? w : w + ' ' + N(Math.abs(p.diff))) + (Math.abs(p.diffKwd) > 0.0005 && w !== 'متساوٍ' ? '<small>' + kw(p.diffKwd) + '</small>' : '') + '</span>';
+  }
   function pairVal(t) { return N(t.egp) + (t.kwd > 0.0005 ? ' <span class="small muted">· ' + fmtN(t.kwd, 3) + ' د.ك</span>' : ''); }
   function pairLines(p) {
-    return p.owedToMe.map(function (t) { return '<div><span class="muted">له عند ' + esc(t.debt) + '</span><span class="good">' + pairVal(t) + '</span></div>'; }).join('') +
-      p.iOwe.map(function (t) { return '<div><span class="muted">عليه لـ ' + esc(t.cred) + '</span><span class="bad">' + pairVal(t) + '</span></div>'; }).join('');
+    if (!p.owedToMe.length && !p.iOwe.length) return '';
+    return '<div class="sec">التسوية مع الشركاء</div>' + p.owedToMe.map(function (t) { return '<div><span>يستلم من <b>' + esc(t.debt) + '</b></span>' + dv(t.egp, t.kwd, 'good') + '</div>'; }).join('') +
+      p.iOwe.map(function (t) { return '<div><span>يدفع إلى <b>' + esc(t.cred) + '</b></span>' + dv(t.egp, t.kwd, 'bad') + '</div>'; }).join('');
   }
   function accountBox(c) {
-    function eq(paid, share, d, fmtf) {
-      var w = d > 0.0005 ? 'له' : d < -0.0005 ? 'عليه' : 'متساوٍ';
-      return '<span dir="ltr">' + fmtf(paid) + ' − ' + fmtf(share) + ' = ' + fmtf(Math.abs(d)) + '</span> ' + w;
-    }
-    return '<div class="card"><b>الحساب بين الشركاء</b><p class="small muted" style="margin:4px 0 0">الصافي = ما موّله الشريك − حصته من إجمالي التمويل</p><div class="lines">' + c.p.map(function (p) {
-      var cls = p.diff > 0.005 ? 'good' : p.diff < -0.005 ? 'bad' : '';
-      var t = p.diff > 0.005 ? 'له ' + N(p.diff) : p.diff < -0.005 ? 'عليه ' + N(-p.diff) : 'متساوٍ';
-      var tk = Math.abs(p.diffKwd) > 0.0005 ? '<div class="small muted" style="font-weight:400">' + (p.diffKwd > 0 ? 'له ' : 'عليه ') + kw(p.diffKwd) + '</div>' : '';
-      var row = '<div><span>' + esc(p.name) + '</span><span class="' + cls + '"><b>' + t + '</b>' + tk + '</span></div>';
-      var calc = '<div class="small muted" style="margin:-4px 0 6px;line-height:1.7">' + esc(cur()) + ': ' + eq(p.paid, p.share, p.diff, fmt) +
-        (c.totalPaidKwd > 0 ? '<br>د.ك: ' + eq(p.paidKwd, p.shareKwd, p.diffKwd, function (v) { return fmtN(v, 3); }) : '') + '</div>';
-      return row + calc;
-    }).join('') + '</div>' + gapsNote(c) + '</div>';
+    function eq(paid, share, d, f) { return '<span dir="ltr" class="num">' + f(paid) + ' − ' + f(share) + ' = ' + f(d) + '</span>'; }
+    return '<details class="how card"><summary>كيف حُسب «له / عليه»؟</summary><p class="small muted" style="margin:6px 0">الفرق = ما موّله الشريك − حصته من إجمالي التمويل. الموجب «له» والسالب «عليه».</p><div class="lines">' + c.p.map(function (p) {
+      return '<div style="flex-direction:column;gap:2px"><b>' + esc(p.name) + '</b><span class="small muted">' + esc(cur()) + ': ' + eq(p.paid, p.share, p.diff, fmt) + '</span>' +
+        (c.totalPaidKwd > 0 ? '<span class="small muted">د.ك: ' + eq(p.paidKwd, p.shareKwd, p.diffKwd, function (v) { return fmtN(v, 3); }) + '</span>' : '') + '</div>';
+    }).join('') + '</div>' + gapsNote(c) + '</details>';
   }
   function splitLines(c, p) {
     if (p.direct <= 0.005) return '';
@@ -770,18 +800,12 @@
       (equal ? '<div><span class="muted">÷ ' + c.p.length + ' شركاء</span><span></span></div>' : '') +
       '<div class="t"><span>' + (equal ? 'نصيب كل شريك' : 'النصيب بحسب النسب') + '</span><span>' + (equal ? N(c.totalPaid / c.p.length) : '') + '</span></div></div>' +
       '<p class="small muted" style="margin:8px 0 0">الفرق = ما دفعه الشريك − نصيبه. «له» يعني يستحق استرداد الفرق، و«عليه» يعني يدفع الفرق.</p></div>' +
-      '<div style="margin-top:12px">' + accountBox(c) + '</div>' +
       '<button class="btn ghost" style="margin-top:12px" data-a="share">إرسال تقرير للشركاء</button><h2>حساب كل شريك</h2><div class="stack">' + c.p.map(function (p) {
-      return '<div class="card"><div class="prow"><span class="nm">' + esc(p.name) + '</span>' + pill(p.diff) + '</div><div class="lines">' +
-        '<div><span class="muted">النسبة</span><span>' + N(p.ratio) + '%</span></div>' +
-        '<div class="t"><span>موّل للصندوق (' + esc(cur()) + ')</span><span>' + N(p.paid) + '</span></div>' +
-        kwRow('موّل للصندوق (د.ك)', p.paidKwd, '', 1) +
-        '<div><span class="muted">حصته من التمويل (' + esc(cur()) + ')</span><span>' + N(p.share) + '</span></div>' +
-        kwRow('حصته من التمويل (د.ك)', p.shareKwd) +
-        '<div class="t"><span>' + (p.diff > 0.005 ? 'له' : p.diff < -0.005 ? 'عليه' : 'الفرق') + ' (' + esc(cur()) + ')</span><span class="' + (p.diff > 0.005 ? 'good' : p.diff < -0.005 ? 'bad' : '') + '">' + N(p.diff) + '</span></div>' +
-        kwRow((p.diffKwd > 0.0005 ? 'له' : p.diffKwd < -0.0005 ? 'عليه' : 'الفرق') + ' (د.ك)', p.diffKwd, p.diffKwd > 0.0005 ? 'good' : p.diffKwd < -0.0005 ? 'bad' : '', 1) +
+      return '<div class="card"><div class="prow"><span class="nm">' + esc(p.name) + ' <span class="muted small">' + fmt(p.ratio) + '%</span></span>' + resBox(p) + '</div><div class="lines">' +
+        '<div><span class="muted">موّل للصندوق</span>' + dv(p.paid, p.paidKwd) + '</div>' +
+        '<div><span class="muted">حصته من التمويل</span>' + dv(p.share, p.shareKwd) + '</div>' +
         pairLines(p) + '</div></div>';
-    }).join('') + '</div>';
+    }).join('') + '</div>' + accountBox(c);
     h += '<h2>التحويلات المقترحة</h2>';
     var tr = num(state.settings.todayRate);
     h += !state.isOwner ? '<div class="card"><div class="lines" style="margin-top:0"><div><span class="muted">سعر صرف اليوم (جنيه لكل دينار)</span><span>' + (tr > 0 ? fmtN(tr, 3) : '—') + '</span></div></div></div>' : '<div class="card"><form id="rateform" novalidate><div class="field" style="margin-bottom:8px"><label for="trate">سعر صرف اليوم (جنيه مقابل 1 دينار كويتي)</label><input id="trate" type="text" inputmode="decimal" autocomplete="off" value="' + (tr > 0 ? esc(tr) : '') + '"></div>' +
@@ -789,15 +813,22 @@
       '<div class="err" id="rateerr" role="alert"></div><button type="submit" class="btn ghost" style="margin-top:0">حفظ سعر اليوم</button></form></div>';
     if (!c.transfers.length) h += '<div class="card empty" style="margin-top:12px"><b>لا توجد تحويلات مطلوبة</b>الحسابات متساوية بين الشركاء حاليًا.</div>';
     else h += '<div class="stack" style="margin-top:12px">' + c.transfers.map(function (t) { return '<div class="card prow"><span><b>' + esc(t.from) + '</b> يحوّل إلى <b>' + esc(t.to) + '</b></span><b>' + N(t.a) + ' <span class="small muted">' + esc(cur()) + '</span>' + (tr > 0 ? '<div class="small muted" style="font-weight:400">≈ ' + fmtN(t.a / tr, 3) + ' د.ك</div>' : '') + '</b></div>'; }).join('') + '</div>';
-    h += '<h2>حركة الصندوق</h2><div class="card"><div class="lines" style="margin-top:0">' +
-      '<div><span class="muted">إجمالي التمويل (' + esc(cur()) + ')</span><span>' + N(c.funding) + '</span></div>' +
-      (c.fundingKwd > 0 ? '<div><span class="muted">إجمالي التمويل (د.ك)</span><span>' + fmtN(c.fundingKwd, 3) + ' د.ك</span></div>' : '') +
-      (c.avgRate > 0 ? '<div><span class="muted">متوسط سعر صرف التمويل</span><span>' + fmtN(c.avgRate, 3) + '</span></div>' : '') +
-      '<div><span class="muted">المحصّل من المبيعات والمستحقات</span><span>' + N(c.collected + c.debtIn) + '</span></div>' +
-      '<div><span class="muted">المصروف من الصندوق</span><span>' + N(c.fundCosts) + '</span></div>' +
+    var src = Object.keys(SRC).filter(function (k) { return c.colSrc[k] > 0.005; });
+    function row(l, v, cls, sub) { return '<div><span class="' + (sub ? 'muted small' : '') + '">' + l + '</span><span class="' + (cls || '') + '">' + v + '</span></div>'; }
+    h += '<h2>حركة صندوق المزرعة</h2><div class="card"><div class="lines" style="margin-top:0">' +
+      '<div class="sec" style="margin:0;border:0;padding:0">يدخل الصندوق</div>' +
+      '<div><span>تمويل الشركاء</span>' + dv(c.funding, c.fundingKwd > 0 ? c.fundingKwd : null, 'good') + '</div>' +
+      (c.avgRate > 0 ? row('متوسط سعر الصرف', fmtN(c.avgRate, 3), '', 1) : '') +
+      src.map(function (k) { return row('+ ' + SRC[k] + ' (محصّل)', N(c.colSrc[k]), 'good'); }).join('') +
+      (c.debtIn > 0.005 ? row('+ مستحقات تم تحصيلها', N(c.debtIn), 'good') : '') +
+      '<div class="sec">يخرج من الصندوق</div>' +
+      c.expCat.map(function (e) { return row('− ' + esc(e.n), N(e.v), 'bad'); }).join('') +
+      (c.incPaid > 0.005 ? row('− مشتريات الوارد (المدفوع)', N(c.incPaid), 'bad') : '') +
+      (c.salPaid > 0.005 ? row('− رواتب مصروفة', N(c.salPaid), 'bad') : '') +
+      (c.debtPaidOut > 0.005 ? row('− ديون تم سدادها', N(c.debtPaidOut), 'bad') : '') +
       '<div class="t"><span>رصيد الصندوق (' + esc(cur()) + ')</span><span>' + N(c.cash) + '</span></div>' +
-      (c.avgRate > 0 ? '<div><span class="muted">ما يعادله بالدينار (بمتوسط سعر التمويل)</span><span>' + fmtN(c.cash / c.avgRate, 3) + ' د.ك</span></div>' : '') + '</div></div>' +
-      '<p class="small muted">التمويل يُسجَّل بالدينار الكويتي مع ما يعادله بالجنيه وقت التسجيل، وكل الصرف من الصندوق يُسجَّل بالجنيه.</p>';
+      (c.avgRate > 0 ? row('ما يعادله بالدينار (بمتوسط سعر التمويل)', '<span dir="ltr">' + fmtN(c.cash / c.avgRate, 3) + '</span> د.ك', '', 1) : '') + '</div></div>' +
+      '<p class="small muted">التمويل بالدينار مع ما يعادله بالجنيه وقت التسجيل، وكل الصرف بالجنيه. المبيعات تدخل الصندوق بقدر ما تم تحصيله فقط.</p>';
     return h;
   }
   function viewRecords() {
@@ -837,7 +868,7 @@
       '<button type="button" class="btn ghost" data-a="equal">تقسيم النسب بالتساوي</button>' +
       '<button type="submit" class="btn">حفظ الإعدادات</button></form></div>' +
       '<p class="small muted">تغيير اسم شريك بعد تسجيل بياناته يفصل سجلاته القديمة عنه. غيّر النسب بحرية.</p>' +
-      '<h2>حسابات الشركاء</h2>' + accountsCard() + '<h2>النسخ الاحتياطي</h2><div class="card"><p style="margin:0 0 4px">البيانات محفوظة على الإنترنت في حساب المزرعة وتظهر للشركاء المفعّلين. النسخة الاحتياطية اختيارية لحفظ نسخة عندك.</p><p class="small muted" style="margin:0">آخر نسخة: ' + lastBackupText() + '</p><button class="btn" data-a="backup">أخذ نسخة احتياطية</button><button class="btn ghost" data-a="restore">استعادة من نسخة</button></div>';
+      '<h2>حسابات الشركاء</h2>' + accountsCard() + '<h2>النسخ الاحتياطي</h2><div class="card"><p style="margin:0 0 4px">البيانات محفوظة على الإنترنت في حساب المزرعة وتظهر للشركاء المفعّلين. النسخة الاحتياطية اختيارية لحفظ نسخة عندك.</p><p class="small muted" style="margin:0">آخر نسخة: ' + lastBackupText() + '</p><button class="btn" data-a="backup">أخذ نسخة احتياطية</button><button class="btn ghost" data-a="restore">استعادة من نسخة</button></div>' + wipeCard();
     return h;
   }
 
@@ -972,11 +1003,34 @@
         var p = String(o).split('|'), ov = p[0], ol = p[1] || p[0];
         return '<option value="' + esc(ov) + '"' + (String(v) === ov ? ' selected' : '') + '>' + esc(ol) + '</option>';
       }).join('') + '</select>';
-    } else if (f.t === 'date') inner = '<input id="' + id + '" type="date" value="' + esc(v) + '">';
+    } else if (f.t === 'date') inner = '<input id="' + id + '" type="text" data-date="1" inputmode="numeric" dir="ltr" maxlength="10" placeholder="YYYY-MM-DD" autocomplete="off" value="' + esc(v) + '">';
     else if (f.t === 'money' || f.t === 'qty') inner = '<input id="' + id + '" type="text" inputmode="decimal" autocomplete="off" value="' + esc(v === '' ? '' : v) + '">';
     else if (f.t === 'combo') inner = '<input id="' + id + '" type="text" list="dl_' + f.k + '" autocomplete="off" value="' + esc(v) + '"><datalist id="dl_' + f.k + '">' + productList().map(function (p) { return '<option value="' + esc(p) + '">'; }).join('') + '</datalist>';
     else inner = '<input id="' + id + '" type="text" autocomplete="off" value="' + esc(v) + '">';
     return '<div class="field"><label for="' + id + '">' + f.l + (f.req ? ' *' : '') + '</label>' + inner + '</div>';
+  }
+  function wipeCard() {
+    return '<h2>مسح البيانات</h2><div class="card"><p style="margin:0">يمسح كل السجلات (التمويل والمصروفات والرواتب والوارد والصادر والإنتاج والهالك والمديونيات والإشعارات) لتبدأ من جديد. الشركاء ونسبهم وحسابات الدخول لا تتأثر.</p><button class="btn danger" style="margin-top:12px" data-a="wipe">مسح كل السجلات</button></div>';
+  }
+  function openWipe() {
+    openSheet(sheetTop('مسح كل السجلات') +
+      '<div class="card"><p style="margin:0"><b>لا يمكن التراجع عن المسح.</b> سيُحذف عدد ' + totalRecords() + ' سجلًا لدى جميع الشركاء. خذ نسخة احتياطية أولًا إن أردت الاحتفاظ بالبيانات.</p></div>' +
+      '<button class="btn ghost" data-a="backup">أخذ نسخة احتياطية أولًا</button>' +
+      '<div class="field"><label for="wtxt">اكتب كلمة «مسح» للتأكيد</label><input id="wtxt" type="text" autocomplete="off"></div>' +
+      '<div class="err" id="werr" role="alert"></div><button class="btn danger" data-a="dowipe" id="wbtn">مسح نهائيًا</button>');
+  }
+  async function doWipe() {
+    var err = $('werr'), b = $('wbtn');
+    if ($('wtxt').value.trim() !== 'مسح') { err.textContent = 'اكتب كلمة «مسح» للتأكيد'; return; }
+    err.textContent = ''; b.disabled = true;
+    try {
+      var jobs = [];
+      COLLS.concat(['pending']).forEach(function (k) { (state[k] || []).forEach(function (x) { jobs.push(dbh.doc(k + '/' + x.id).delete()); }); });
+      await Promise.all(jobs);
+      if (window.__farmCloud && window.__farmCloud.clearActivity) await window.__farmCloud.clearActivity();
+      try { localStorage.setItem('farm.cleared', String(Date.now())); localStorage.setItem('farm.hidden', '[]'); } catch (e) { }
+      toast('تم مسح كل السجلات'); closeSheet(); state.tab = 'home'; render();
+    } catch (e) { b.disabled = false; err.textContent = 'تعذّر المسح، حاول مرة أخرى.'; }
   }
   function legacyItems() {
     var names = partnerNames(), out = [];
@@ -1289,7 +1343,7 @@
   function openForm(type, rec) {
     var T = TYPES[type]; cur_edit = { type: type, id: rec ? rec.id : null, createdAt: rec ? rec.createdAt : null, old: rec ? stripId(rec) : null };
     var d = rec || {};
-    if (!rec) { d = { date: today() };  if (type === 'payroll') { d.paid = 'yes'; } if (type === 'debts') { d.kind = 'onfarm'; d.status = 'unpaid'; } }
+    if (!rec) { d = { date: today() };  if (type === 'payroll') { d.paid = 'yes'; } if (type === 'debts') { d.kind = 'onfarm'; d.status = 'unpaid'; } if (type === 'outgoing') { d.src = 'animals'; } }
     var h = sheetTop((rec ? (state.isAdmin ? 'تعديل ' : 'طلب تعديل ') : (state.isAdmin ? 'تسجيل ' : 'طلب إضافة ')) + T.label) + '<form id="recform" novalidate>';
     var i = 0, fs = T.fields;
     while (i < fs.length) {
@@ -1327,6 +1381,7 @@
   async function saveRecord() {
     var type = cur_edit.type, T = TYPES[type], d = readForm(type), err = $('formerr');
     for (var i = 0; i < T.fields.length; i++) { var f = T.fields[i]; if (f.req && (d[f.k] === '' || d[f.k] == null)) { err.textContent = 'املأ حقل «' + f.l + '»'; var el = $('f_' + f.k); if (el) el.focus(); return; } }
+    for (var q = 0; q < T.fields.length; q++) { var df = T.fields[q]; if (df.t === 'date' && d[df.k] !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(d[df.k])) { err.textContent = 'اكتب «' + df.l + '» بالشكل YYYY-MM-DD مثل 2026-11-30'; var de = $('f_' + df.k); if (de) de.focus(); return; } }
     for (var j = 0; j < T.fields.length; j++) { var g = T.fields[j]; if ((g.t === 'money' || g.t === 'qty') && d[g.k] !== '' && d[g.k] < 0) { err.textContent = 'لا يمكن أن تكون القيمة سالبة في «' + g.l + '»'; return; } }
     var btn = $('savebtn'); btn.disabled = true; err.textContent = '';
     try {
@@ -1438,6 +1493,8 @@
     else if (a === 'actclear') clearActs();
     else if (a === 'mkacct') makeAccount();
     else if (a === 'rmacct') { if (confirm('إيقاف دخول هذا الشريك؟')) window.__farmCloud.removeAccess(b.getAttribute('data-e')).then(function () { toast('تم الإيقاف'); }); }
+    else if (a === 'wipe') openWipe();
+    else if (a === 'dowipe') doWipe();
     else if (a === 'migrate') runMigrate();
     else if (a === 'debtpay') debtPay(b.getAttribute('data-id'));
     else if (a === 'debtdel') debtDel(b.getAttribute('data-id'));
